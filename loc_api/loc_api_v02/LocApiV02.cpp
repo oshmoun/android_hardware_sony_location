@@ -47,6 +47,10 @@
 #include <loc_cfg.h>
 #include <LocDualContext.h>
 
+extern "C" {
+#include <libloc_loader/libloc_loader.h>
+}
+
 using namespace loc_core;
 
 /* Doppler Conversion from M/S to NS/S */
@@ -302,6 +306,9 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
 
   LOC_LOGd("%p Enter mMask: 0x%" PRIx64 "  mQmiMask: 0x%" PRIx64 " mExcludedMask: 0x%" PRIx64 "",
            clientHandle, mMask, mQmiMask, mExcludedMask);
+
+  // load proprietary symbols from their respective libs
+  load_proprietary_symbols();
 
   /* If the client is already open close it first */
   if(LOC_CLIENT_INVALID_HANDLE_VALUE == clientHandle)
