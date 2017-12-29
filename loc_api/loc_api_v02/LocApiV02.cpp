@@ -46,6 +46,10 @@
 #include <loc_cfg.h>
 #include <LocDualContext.h>
 
+extern "C" {
+#include <libloc_loader/libloc_loader.h>
+}
+
 using namespace loc_core;
 
 /* Doppler Conversion from M/S to NS/S */
@@ -246,7 +250,7 @@ LocApiBase* LocApiV02::createLocApiV02(const MsgTask *msgTask,
                       LOC_API_ADAPTER_EVENT_MASK_T exMask,
                       ContextBase* context)
 {
-    if (NULL != msgTask) {
+    if (NULL == msgTask) {
         LOC_LOGE("%s:%d]: msgTask can not be NULL", __func__, __LINE__);
         return NULL;
     }
@@ -266,6 +270,10 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
           mQmiMask: %" PRIu64 " qmiMask: %" PRIu64,
            __func__, __LINE__, clientHandle, mMask, mask, newMask,
            mQmiMask, qmiMask);
+
+  // load proprietary symbols from their respective libs
+  load_proprietary_symbols();
+
   /* If the client is already open close it first */
   if(LOC_CLIENT_INVALID_HANDLE_VALUE == clientHandle)
   {
@@ -377,13 +385,13 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
                             supportedMsgList |=
                                 (1 << LOC_API_ADAPTER_MESSAGE_UPDATE_TBF_ON_THE_FLY);
                         }
-                        if (queryAonConfigInd.aonCapability |
+                        /*if (queryAonConfigInd.aonCapability |
                             QMI_LOC_MASK_AON_OUTDOOR_TRIP_BATCHING_SUPPORTED_V02) {
                             LOC_LOGD("%s:%d]: OTB is supported.\n",
                                      __func__, __LINE__);
                             supportedMsgList |=
                                 (1 << LOC_API_ADAPTER_MESSAGE_OUTDOOR_TRIP_BATCHING);
-                        }
+                        }*/
                     } else {
                         LOC_LOGE("%s:%d]: AON capability is invalid.\n", __func__, __LINE__);
                     }
@@ -1961,12 +1969,12 @@ LocApiV02::setLPPeProtocolCp(GnssConfigLppeControlPlaneMask lppeCP)
   if (GNSS_CONFIG_LPPE_CONTROL_PLANE_WLAN_AP_MEASUREMENTS_BIT & lppeCP) {
       lppe_req.lppeCpConfig |= QMI_LOC_LPPE_MASK_CP_AP_WIFI_MEASUREMENT_V02;
   }
-  if (GNSS_CONFIG_LPPE_CONTROL_PLANE_SRN_AP_MEASUREMENTS_BIT & lppeCP) {
+  /*if (GNSS_CONFIG_LPPE_CONTROL_PLANE_SRN_AP_MEASUREMENTS_BIT & lppeCP) {
       lppe_req.lppeCpConfig |= QMI_LOC_LPPE_MASK_CP_AP_SRN_BTLE_MEASUREMENT_V02;
   }
   if (GNSS_CONFIG_LPPE_CONTROL_PLANE_SENSOR_BARO_MEASUREMENTS_BIT & lppeCP) {
       lppe_req.lppeCpConfig |= QMI_LOC_LPPE_MASK_CP_UBP_V02;
-  }
+  }*/
 
   req_union.pSetProtocolConfigParametersReq = &lppe_req;
 
@@ -2012,12 +2020,12 @@ LocApiV02::setLPPeProtocolUp(GnssConfigLppeUserPlaneMask lppeUP)
   if (GNSS_CONFIG_LPPE_USER_PLANE_WLAN_AP_MEASUREMENTS_BIT & lppeUP) {
       lppe_req.lppeUpConfig |= QMI_LOC_LPPE_MASK_UP_AP_WIFI_MEASUREMENT_V02;
   }
-  if (GNSS_CONFIG_LPPE_USER_PLANE_SRN_AP_MEASUREMENTS_BIT & lppeUP) {
+  /*if (GNSS_CONFIG_LPPE_USER_PLANE_SRN_AP_MEASUREMENTS_BIT & lppeUP) {
       lppe_req.lppeUpConfig |= QMI_LOC_LPPE_MASK_UP_AP_SRN_BTLE_MEASUREMENT_V02;
   }
   if (GNSS_CONFIG_LPPE_USER_PLANE_SENSOR_BARO_MEASUREMENTS_BIT & lppeUP) {
       lppe_req.lppeUpConfig |= QMI_LOC_LPPE_MASK_UP_UBP_V02;
-  }
+  }*/
 
   req_union.pSetProtocolConfigParametersReq = &lppe_req;
 
@@ -2120,9 +2128,9 @@ locClientEventMaskType LocApiV02 :: convertMask(
   if(mask & LOC_API_ADAPTER_BIT_BATCH_FULL)
       eventMask |= QMI_LOC_EVENT_MASK_BATCH_FULL_NOTIFICATION_V02;
 
-  if(mask & LOC_API_ADAPTER_BIT_BATCH_STATUS)
+  /*if(mask & LOC_API_ADAPTER_BIT_BATCH_STATUS)
       eventMask |= QMI_LOC_EVENT_MASK_BATCHING_STATUS_V02;
-
+  */
   if(mask & LOC_API_ADAPTER_BIT_BATCHED_POSITION_REPORT)
       eventMask |= QMI_LOC_EVENT_MASK_LIVE_BATCHED_POSITION_REPORT_V02;
 
@@ -2457,12 +2465,12 @@ void LocApiV02 :: reportPosition (
                locationExtended.navSolutionMask = convertNavSolutionMask(location_report_ptr->navSolutionMask);
             }
 
-            if (location_report_ptr->gpsTime_valid)
+            /*if (location_report_ptr->gpsTime_valid)
             {
                locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_GPS_TIME;
                locationExtended.gpsTime.gpsWeek = location_report_ptr->gpsTime.gpsWeek;
                locationExtended.gpsTime.gpsTimeOfWeekMs = location_report_ptr->gpsTime.gpsTimeOfWeekMs;
-            }
+            }*/
 
             LocApiBase::reportPosition(location,
                                        locationExtended,
@@ -3532,7 +3540,7 @@ void LocApiV02 :: reportGnssMeasurementData(
     if (gnss_measurement_report_ptr.maxMessageNum == gnss_measurement_report_ptr.seqNum
             && meas_index > 0 && true == bGPSreceived) {
         // calling the base
-        LocApiBase::reportGnssMeasurementData(measurementsNotify, msInWeek);
+        LocApiBase::reportGnssMeasurementData(measurementsNotify/*, msInWeek*/);
     }
 }
 

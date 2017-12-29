@@ -16,13 +16,14 @@ endif
 LOCAL_SHARED_LIBRARIES := \
     libutils \
     libcutils \
-    libqmi_cci \
-    libqmi_common_so \
     libloc_core \
     libgps.utils \
-    libdl \
+    libloc_ds_api \
     liblog \
-    libloc_pla
+    libloc_loader \
+    libdl \
+    libloc_pla \
+    liblocation_api
 
 LOCAL_SRC_FILES = \
     LocApiV02.cpp \
@@ -35,20 +36,28 @@ LOCAL_CFLAGS += \
     -fno-short-enums \
     -D_ANDROID_
 
+LOCAL_COPY_HEADERS_TO:= libloc_api_v02/
+
+LOCAL_COPY_HEADERS:= \
+    location_service_v02.h \
+    loc_api_v02_log.h \
+    loc_api_v02_client.h \
+    loc_api_sync_req.h \
+    LocApiV02.h \
+    loc_util_log.h
+
+
 ## Includes
 LOCAL_C_INCLUDES := \
-    $(TARGET_OUT_HEADERS)/qmi-framework/inc \
-    $(TARGET_OUT_HEADERS)/qmi/inc
-LOCAL_HEADER_LIBRARIES := \
-    libloc_core_headers \
-    libgps.utils_headers \
-    libloc_ds_api_headers \
-    libloc_pla_headers \
-    liblocation_api_headers
+    $(TARGET_OUT_HEADERS)/libloc_core \
+    $(TARGET_OUT_HEADERS)/gps.utils \
+    $(TARGET_OUT_HEADERS)/libloc_ds_api \
+    $(TARGET_OUT_HEADERS)/libloc_pla \
+    $(TARGET_OUT_HEADERS)/liblocation_api
+
+LOCAL_MODULE_OWNER := qcom
+LOCAL_PROPRIETARY_MODULE := true
+
 LOCAL_CFLAGS += $(GNSS_CFLAGS)
 include $(BUILD_SHARED_LIBRARY)
 
-include $(CLEAR_VARS)
-LOCAL_MODULE := libloc_api_v02_headers
-LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
-include $(BUILD_HEADER_LIBRARY)
