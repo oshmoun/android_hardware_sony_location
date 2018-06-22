@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of The Linux Foundation nor the names of its
+ *     * Neither the name of The Linux Foundation, nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -24,28 +24,48 @@
  * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
  */
 
-#ifndef LOC_API_V02_LOG_H
-#define LOC_API_V02_LOG_H
+#ifndef LOCHALDAEMONIPCRECEIVER_H
+#define LOCHALDAEMONIPCRECEIVER_H
 
-#ifdef __cplusplus
-extern "C"
+#include <string>
+
+#include <LocIpc.h>
+#include <gps_extended_c.h>
+
+using loc_util::LocIpc;
+
+// forward declaration
+class LocationApiService;
+
+/******************************************************************************
+LocHalDaemonIPCReceiver - definition
+******************************************************************************/
+class LocHalDaemonIPCReceiver : public LocIpc
 {
-#endif
+public:
+    LocHalDaemonIPCReceiver(LocationApiService* service) :
+            mService(service) { }
+    virtual ~LocHalDaemonIPCReceiver() { }
 
-#include <loc_log.h>
-#include <loc_api_v02_client.h>
+    bool start() {
+        return startListeningBlocking(SOCKET_TO_LOCATION_HAL_DAEMON);
+        // never return
+    }
 
-const char* loc_get_v02_event_name(uint32_t event);
-const char* loc_get_v02_client_status_name(locClientStatusEnumType status);
-const char* loc_get_v02_qmi_status_name(qmiLocStatusEnumT_v02 status);
-const char* loc_get_v02_qmi_reg_mk_status_name(qmiLocRegisterMasterClientStatusEnumT_v02 status);
+    void stop() {
+        // not used
+        stopListening();
+    }
 
+    // override from LocIpc
+    void onReceive(const std::string& data) override;
+    void onListenerReady() override;
 
-#ifdef __cplusplus
-}
-#endif
+private:
+    LocationApiService *mService;
+};
 
-#endif /* LOC_API_V02_LOG_H */
+#endif //LOCHALDAEMONIPCRECEIVER_H
+

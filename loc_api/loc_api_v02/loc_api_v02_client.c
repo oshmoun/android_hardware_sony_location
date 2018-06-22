@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, 2018, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -673,9 +673,23 @@ static const locClientRespIndTableStructT locClientRespIndTable[]= {
      sizeof(qmiLocGetFdclBsListIndMsgT_v02) },
 
    { QMI_LOC_INJECT_FDCL_DATA_IND_V02,
-     sizeof(qmiLocInjectFdclDataIndMsgT_v02) }
+     sizeof(qmiLocInjectFdclDataIndMsgT_v02) },
 
+   { QMI_LOC_SET_BLACKLIST_SV_IND_V02,
+     sizeof(qmiLocGenReqStatusIndMsgT_v02) },
 
+    // register master
+   { QMI_LOC_REGISTER_MASTER_CLIENT_IND_V02,
+     sizeof(qmiLocRegisterMasterClientIndMsgT_v02) },
+
+   { QMI_LOC_GET_BLACKLIST_SV_IND_V02,
+     sizeof(qmiLocGetBlacklistSvIndMsgT_v02) },
+
+   { QMI_LOC_SET_CONSTELLATION_CONTROL_IND_V02,
+     sizeof(qmiLocGenReqStatusIndMsgT_v02) },
+
+   { QMI_LOC_GET_CONSTELLATION_CONTROL_IND_V02,
+     sizeof(qmiLocGetConstellationConfigIndMsgT_v02) }
 };
 
 
@@ -1087,7 +1101,8 @@ static void locClientIndCb
 
 bool locClientRegisterEventMask(
     locClientHandleType clientHandle,
-    locClientEventMaskType eventRegMask)
+    locClientEventMaskType eventRegMask,
+    bool bIsMaster)
 {
   locClientStatusEnumType status = eLOC_CLIENT_SUCCESS;
   locClientReqUnionType reqUnion;
@@ -1096,6 +1111,17 @@ bool locClientRegisterEventMask(
   memset(&regEventsReq, 0, sizeof(regEventsReq));
 
   regEventsReq.eventRegMask = eventRegMask;
+  regEventsReq.clientStrId_valid = true;
+  if (bIsMaster) {
+      LOC_LOGV("%s:%d] %s", __func__, __LINE__, MASTER_HAL);
+      strlcpy(regEventsReq.clientStrId, MASTER_HAL,
+              sizeof(regEventsReq.clientStrId));
+  }
+  else {
+      LOC_LOGV("%s:%d] %s", __func__, __LINE__, HAL);
+      strlcpy(regEventsReq.clientStrId, HAL,
+              sizeof(regEventsReq.clientStrId));
+  }
   reqUnion.pRegEventsReq = &regEventsReq;
 
   status = locClientSendReq(clientHandle,
@@ -1644,6 +1670,24 @@ static bool validateRequest(
         break;
     }
 
+    case QMI_LOC_SET_BLACKLIST_SV_REQ_V02:
+    {
+        *pOutLen = sizeof(qmiLocSetBlacklistSvReqMsgT_v02);
+        break;
+    }
+
+    case QMI_LOC_SET_CONSTELLATION_CONTROL_REQ_V02:
+    {
+        *pOutLen = sizeof(qmiLocSetConstellationConfigReqMsgT_v02);
+        break;
+    }
+
+    case QMI_LOC_REGISTER_MASTER_CLIENT_REQ_V02 :
+    {
+        *pOutLen = sizeof(qmiLocRegisterMasterClientReqMsgT_v02);
+        break;
+    }
+
     // ALL requests with no payload
     case QMI_LOC_GET_SERVICE_REVISION_REQ_V02:
     case QMI_LOC_GET_FIX_CRITERIA_REQ_V02:
@@ -1665,6 +1709,8 @@ static bool validateRequest(
     case QMI_LOC_GET_SUPPORTED_MSGS_REQ_V02:
     case QMI_LOC_GET_SUPPORTED_FIELDS_REQ_V02:
     case QMI_LOC_QUERY_OTB_ACCUMULATED_DISTANCE_REQ_V02:
+    case QMI_LOC_GET_BLACKLIST_SV_REQ_V02:
+    case QMI_LOC_GET_CONSTELLATION_CONTROL_REQ_V02:
     {
       noPayloadFlag = true;
       break;
@@ -1895,7 +1941,7 @@ locClientStatusEnumType locClientOpenInstance (
      // set the handle to the callback data
     *pLocClientHandle = (locClientHandleType)pCallbackData;
 
-    if(true != locClientRegisterEventMask(*pLocClientHandle,eventRegMask))
+    if (true != locClientRegisterEventMask(*pLocClientHandle, eventRegMask, false))
     {
       LOC_LOGE("%s:%d]: Error sending registration mask\n",
                   __func__, __LINE__);

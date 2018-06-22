@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,7 +31,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <ds_client.h>
 #include <LocApiBase.h>
 #include <loc_api_v02_client.h>
 #include <vector>
@@ -73,23 +72,21 @@ protected:
   locClientHandleType clientHandle;
 
 private:
-  /* ds client library handle */
-  void *dsLibraryHandle;
-  /* ds client interface */
-  const ds_client_iface_type *dsClientIface;
-  /* ds client handle */
-  dsClientHandleType dsClientHandle;
   locClientEventMaskType mQmiMask;
   bool mInSession;
   bool mEngineOn;
   bool mMeasurementsStarted;
   std::vector<Resender> mResenders;
+  bool mIsMasterRegistered;
 
   /* Convert event mask from loc eng to loc_api_v02 format */
   static locClientEventMaskType convertMask(LOC_API_ADAPTER_EVENT_MASK_T mask);
 
-  /* Convert GPS LOCK mask */
-  static qmiLocLockEnumT_v02 convertGpsLockMask(GnssConfigGpsLock lock);
+  /* Convert GPS LOCK from LocationAPI format to QMI format */
+  static qmiLocLockEnumT_v02 convertGpsLockFromAPItoQMI(GnssConfigGpsLock lock);
+
+  /* Convert GPS LOCK from QMI format to LocationAPI format */
+  static GnssConfigGpsLock convertGpsLockFromQMItoAPI(qmiLocLockEnumT_v02 lock);
 
   /* Convert error from loc_api_v02 to loc eng format*/
   static enum loc_api_adapter_err convertErr(locClientStatusEnumType status);
@@ -102,10 +99,27 @@ private:
   static bool convertNiNotifyVerifyType (GnssNiNotification *notif,
       qmiLocNiNotifyVerifyEnumT_v02 notif_priv);
 
+  /*convert signal type to carrier frequency*/
+  static float convertSignalTypeToCarrierFrequency(
+      qmiLocGnssSignalTypeMaskT_v02 signalType,
+      uint8_t gloFrequency);
+
   /*convert GnssMeasurement type from QMI LOC to loc eng format*/
-  static void convertGnssMeasurements (GnssMeasurementsData& measurementData,
+  static bool convertGnssMeasurements (GnssMeasurementsData& measurementData,
       const qmiLocEventGnssSvMeasInfoIndMsgT_v02& gnss_measurement_report_ptr,
       int index);
+
+  /* Convert APN Type mask */
+  static qmiLocApnTypeMaskT_v02 convertLocApnTypeMask(LocApnTypeMask mask);
+  static LocApnTypeMask convertQmiLocApnTypeMask(qmiLocApnTypeMaskT_v02 mask);
+
+  /* Convert Get Constellation QMI Ind info to GnssSvTypeConfig */
+  static void convertToGnssSvTypeConfig(
+          const qmiLocGetConstellationConfigIndMsgT_v02& ind,
+          GnssSvTypeConfig& config);
+
+  /* Convert GnssPowerMode to QMI Loc Power Mode Enum */
+  static qmiLocPowerModeEnumT_v02 convertPowerMode(GnssPowerMode powerMode);
 
   /*convert LocGnssClock type from QMI LOC to loc eng format*/
   int convertGnssClock (GnssMeasurementsClock& clock,
@@ -164,9 +178,34 @@ private:
   void reportGnssMeasurementData(
     const qmiLocEventGnssSvMeasInfoIndMsgT_v02& gnss_measurement_report_ptr);
 
+  /* convert and report ODCPI request */
+  void requestOdcpi(
+    const qmiLocEventWifiReqIndMsgT_v02& odcpiReq);
+
   bool registerEventMask(locClientEventMaskType qmiMask);
   locClientEventMaskType adjustMaskForNoSession(locClientEventMaskType qmiMask);
   bool cacheGnssMeasurementSupport();
+  void registerMasterClient();
+  int getGpsLock(uint8_t subType);
+
+  inline bool checkRegisterMaster() {
+      if (!mIsMasterRegistered) {
+          if (true == isMaster()) {
+              registerMasterClient();
+              mIsMasterRegistered = true;
+              return true;
+          }
+      }
+      return false;
+  }
+
+  /* Convert get blacklist sv info to GnssSvIdConfig */
+  void reportGnssSvIdConfig
+    (const qmiLocGetBlacklistSvIndMsgT_v02& getBlacklistSvIndMsg);
+
+  /* Convert get constellation info to GnssSvTypeConfig */
+  void reportGnssSvTypeConfig
+    (const qmiLocGetConstellationConfigIndMsgT_v02& getConstellationConfigIndMsg);
 
 protected:
   virtual enum loc_api_adapter_err
@@ -191,8 +230,6 @@ public:
   void errorCb(locClientHandleType handle,
                locClientErrorEnumType errorId);
 
-  void ds_client_event_cb(ds_client_status_enum_type result);
-
   virtual void startFix(const LocPosMode& posMode,
         LocApiResponse *adapterResponse);
 
@@ -205,6 +242,9 @@ public:
 
   virtual void
     injectPosition(double latitude, double longitude, float accuracy);
+
+  virtual void
+    injectPosition(const Location& location, bool onDemandCpi);
 
   virtual void
     deleteAidingData(const GnssAidingData& data, LocApiResponse *adapterResponse);
@@ -222,7 +262,7 @@ public:
     requestXtraServer();
   virtual void
     atlOpenStatus(int handle, int is_succ, char* apn, uint32_t apnLen, AGpsBearerType bear,
-                   LocAGpsType agpsType);
+                   LocAGpsType agpsType, LocApnTypeMask mask);
   virtual void atlCloseStatus(int handle, int is_succ);
   virtual LocationError setSUPLVersionSync(GnssConfigSuplVersion version);
 
@@ -249,26 +289,19 @@ public:
       setAGLONASSProtocolSync(GnssConfigAGlonassPositionProtocolMask aGlonassProtocol);
   virtual LocationError setLPPeProtocolCpSync(GnssConfigLppeControlPlaneMask lppeCP);
   virtual LocationError setLPPeProtocolUpSync(GnssConfigLppeUserPlaneMask lppeUP);
-  virtual enum loc_api_adapter_err
-      getWwanZppFix();
+  virtual void getWwanZppFix();
   virtual void
       handleWwanZppFixIndication(const qmiLocGetAvailWwanPositionIndMsgT_v02 &zpp_ind);
   virtual void
       handleZppBestAvailableFixIndication(const qmiLocGetBestAvailablePositionIndMsgT_v02 &zpp_ind);
   virtual void getBestAvailableZppFix();
-  virtual int initDataServiceClient(bool isDueToSsr);
-  virtual int openAndStartDataCall();
-  virtual void stopDataCall();
-  virtual void closeDataCall();
-  virtual void releaseDataServiceClient();
   virtual LocationError setGpsLockSync(GnssConfigGpsLock lock);
 
   /*
-    Returns
-    Current value of GPS Lock on success
-    -1 on failure
+  Returns
+  Current value of GPS Lock on success
+  -1 on failure
   */
-  virtual int getGpsLock(void);
   virtual int setSvMeasurementConstellation(const locClientEventMaskType mask);
   virtual LocationError setXtraVersionCheckSync(uint32_t check);
   virtual void installAGpsCert(const LocDerEncodedCertificate* pData,
@@ -281,6 +314,14 @@ public:
   virtual GnssConfigLppeControlPlaneMask convertLppeCp(const uint32_t lppeControlPlaneMask);
   virtual GnssConfigLppeUserPlaneMask convertLppeUp(const uint32_t lppeUserPlaneMask);
 
+  /* Requests for SV/Constellation Control */
+  virtual LocationError setBlacklistSvSync(const GnssSvIdConfig& config);
+  virtual void setBlacklistSv(const GnssSvIdConfig& config);
+  virtual void getBlacklistSv();
+  virtual void setConstellationControl(const GnssSvTypeConfig& config);
+  virtual void getConstellationControl();
+  virtual void resetConstellationControl();
+
   locClientStatusEnumType locSyncSendReq(uint32_t req_id, locClientReqUnionType req_payload,
           uint32_t timeout_msec, uint32_t ind_id, void* ind_payload_ptr);
 
@@ -288,7 +329,6 @@ public:
           locClientReqUnionType req_payload) {
       return ::locClientSendReq(clientHandle, req_id, req_payload);
   }
-
 };
 
 extern "C" LocApiBase* getLocApi(LOC_API_ADAPTER_EVENT_MASK_T exMask,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -58,8 +58,10 @@ extern "C" {
   Specific value of #locClientHandleType, indicating an invalid handle. */
 #define LOC_CLIENT_INVALID_HANDLE_VALUE (NULL)
 
+#define MASTER_HAL   "MHAL"
+#define HAL          "HAL"
 
-/** @addtogroup data_types
+  /** @addtogroup data_types
 @{ */
 
 /** Location client handle used to represent a specific client. Negative values
@@ -241,6 +243,16 @@ typedef union
         To send this request, set the reqId field in locClientSendReq() to
         QMI_LOC_SET_ENGINE_LOCK_REQ_V02. */
 
+   const qmiLocGetEngineLockReqMsgT_v02* pGetEngineLockReq;
+   /**< Gets the location engine lock.
+
+   If the request is accepted by the service, the client receives the
+   following indication containing a response:
+   QMI_LOC_GET_ENGINE_LOCK_IND_V02.
+
+   To send this request, set the reqId field in locClientSendReq() to
+   QMI_LOC_GET_ENGINE_LOCK_REQ_V02. */
+
    const qmiLocSetSbasConfigReqMsgT_v02* pSetSbasConfigReq;
    /**< Sets the SBAS configuration.
 
@@ -270,6 +282,16 @@ typedef union
 
         To send this request, set the reqId field in locClientSendReq() to
         QMI_LOC_SET_LOW_POWER_MODE_REQ_V02. */
+
+   const qmiLocRegisterMasterClientReqMsgT_v02* pRegisterMasterClientReq;
+   /**< Register Master Client.
+
+        If the request is accepted by the service, the client receives the
+        following indication containing a response:
+        QMI_LOC_REGISTER_MASTER_CLIENT_IND_V02.
+
+        To send this request, set the reqId field in locClientSendReq() to
+        QMI_LOC_REGISTER_MASTER_CLIENT_REQ_V02. */
 
    const qmiLocSetServerReqMsgT_v02* pSetServerReq;
    /**< Sets the A-GPS server type and address.
@@ -747,6 +769,12 @@ typedef union
 
     const qmiLocInjectFdclDataReqMsgT_v02 *pInjectFdclDataReq;
     /*QMI_LOC_INJECT_FDCL_DATA_REQ_V02*/
+
+    const qmiLocSetBlacklistSvReqMsgT_v02 *pSetBlacklistSvReq;
+    /*QMI_LOC_SET_BLACKLIST_SV_REQ_V02*/
+
+    const qmiLocSetConstellationConfigReqMsgT_v02 *pSetConstellationConfigReq;
+    /*QMI_LOC_SET_CONSTELLATION_CONTROL_REQ_V02*/
 }locClientReqUnionType;
 
 
@@ -1019,6 +1047,14 @@ typedef union
   /**< Sent by the engine to request the client for FDCL data
     QMI_LOC_EVENT_FDCL_SERVICE_REQ_IND_V02. */
 
+   const qmiLocGetBlacklistSvIndMsgT_v02 *pGetBlacklistSvEvent;
+   /**< Sent by the engine to provide current blackisting SV info.
+        QMI_LOC_GET_BLACKLIST_SV_IND_V02. */
+
+   const qmiLocGetConstellationConfigIndMsgT_v02 *pGetConstellationConfigEvent;
+   /**< Sent by the engine to provide current constellation control info.
+        QMI_LOC_GET_CONSTELLATION_CONTROL_IND_V02. */
+
 }locClientEventIndUnionType;
 
 
@@ -1130,6 +1166,12 @@ typedef union
 
         The respIndId field in the response indication callback is set to
         QMI_LOC_GET_LOW_POWER_MODE_IND_V02. */
+
+   const qmiLocRegisterMasterClientIndMsgT_v02* pRegisterMasterClientInd;
+   /**< Response to QMI_LOC_REGISTER_MASTER_CLIENT_REQ_V02.
+
+        The respIndId field in the response indication callback is set to
+        QMI_LOC_REGISTER_MASTER_CLIENT_IND_V02. */
 
    const qmiLocSetServerIndMsgT_v02* pSetServerInd;
    /**< Response to the QMI_LOC_SET_SERVER_REQ_V02 request.
@@ -1805,7 +1847,8 @@ extern bool locClientGetSizeByRespIndId(
 
 extern bool locClientRegisterEventMask(
     locClientHandleType clientHandle,
-    locClientEventMaskType eventRegMask);
+    locClientEventMaskType eventRegMask,
+    bool bIsMaster);
 
 /*=============================================================================*/
 /** @} */ /* end_addtogroup operation_functions */
