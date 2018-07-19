@@ -36,14 +36,19 @@
 #include <MsgTask.h>
 #include <loc_cfg.h>
 #include <LocIpc.h>
+#ifdef POWERMANAGER_ENABLED
+#include <PowerEvtHandler.h>
+#endif
 #include <location_interface.h>
 #include <LocationAPI.h>
-#include <LocationApiMsg.h> // move to loc_hal_daemon
+#include <LocationApiMsg.h>
 
 #include <LocHalDaemonClientHandler.h>
 
 #undef LOG_TAG
 #define LOG_TAG "LocSvc_HalDaemon"
+
+#define SERVICE_NAME "locapiservice"
 
 // forward declaration
 class LocHalDaemonIPCReceiver;
@@ -72,10 +77,11 @@ public:
         }
     }
 
+    // APIs can be invoked by IPC
     void newClient(LocAPIClientRegisterReqMsg*);
     void deleteClient(LocAPIClientDeregisterReqMsg*);
 
-    uint32_t startTracking(LocAPIStartTrackingReqMsg*);
+    void startTracking(LocAPIStartTrackingReqMsg*);
     void stopTracking(LocAPIStopTrackingReqMsg*);
     void updateSubscription(LocAPIUpdateCallbacksReqMsg*);
     void updateTrackingOptions(LocAPIUpdateTrackingOptionsReqMsg*);
@@ -89,31 +95,31 @@ public:
         mLocationControlApi->gnssDeleteAidingData(data);
     }
 
+    // from IPC receiver
     void onListenerReady();
+
+#ifdef POWERMANAGER_ENABLED
+    // power event handler
+    void onSuspend();
+    void onResume();
+    void onShutdown();
+#endif
+
+    // other APIs
+    void deleteClientbyName(const std::string name);
+
+    static std::mutex mMutex;
 
 private:
     // Location control API callback
     void onControlResponseCallback(LocationError err, uint32_t id);
     void onControlCollectiveResponseCallback(size_t count, LocationError *errs, uint32_t *ids);
 
-    // Location API callback functions
-    void onCapabilitiesCallback(LocationCapabilitiesMask capabilitiesMask);
-    void onResponseCb(LocationError err, uint32_t id);
-    void onCollectiveResponseCallback(size_t count, LocationError *errs, uint32_t *ids);
-
-    void onTrackingCb(Location location);
-    void onGnssLocationInfoCb(GnssLocationInfoNotification gnssLocationInfoNotification);
-
-    void onGnssNiCb(uint32_t id, GnssNiNotification gnssNiNotification);
-    void onGnssSvCb(GnssSvNotification gnssSvNotification);
-    void onGnssNmeaCb(GnssNmeaNotification);
-    void onGnssMeasurementsCb(GnssMeasurementsNotification);
-
     LocationApiService(uint32_t autostart, uint32_t sessiontbfms);
     virtual ~LocationApiService();
 
     // private utilities
-    inline LocHalDaemonClientHandler* getClient(std::string& clientname) {
+    inline LocHalDaemonClientHandler* getClient(const std::string& clientname) {
         // find client from property db
         auto client = mClients.find(clientname);
         if (client == std::end(mClients)) {
@@ -130,6 +136,11 @@ private:
 
     GnssInterface* getGnssInterface();
 
+#ifdef POWERMANAGER_ENABLED
+    // power event observer
+    PowerEvtHandler* mPowerEventObserver;
+#endif
+
     // singleton instance
     static LocationApiService *mInstance;
 
@@ -137,21 +148,15 @@ private:
     LocHalDaemonIPCReceiver* mIpcReceiver;
 
     // Client propery database
-    static std::mutex mMutex;
     std::unordered_map<std::string, LocHalDaemonClientHandler*> mClients;
-
-    // Location API interface
-    LocationCallbacks mCallbacks;
 
     // Location Control API interface
     uint32_t mLocationControlId;
     LocationControlCallbacks mControlCallabcks;
-
     LocationControlAPI *mLocationControlApi;
 
     // Configration
     const uint32_t mAutoStartGnss;
-    const uint32_t mGnssSessionTbfMs;
 };
 
 #endif //LOCATIONAPISERVICE_H

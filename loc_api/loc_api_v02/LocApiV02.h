@@ -207,6 +207,9 @@ private:
   void reportGnssSvTypeConfig
     (const qmiLocGetConstellationConfigIndMsgT_v02& getConstellationConfigIndMsg);
 
+  /* Inform ODCPI availability to Modem */
+  void wifiStatusInformSync();
+
 protected:
   virtual enum loc_api_adapter_err
     open(LOC_API_ADAPTER_EVENT_MASK_T mask);
@@ -253,7 +256,7 @@ public:
     informNiResponse(GnssNiResponse userResponse, const void* passThroughData);
 
   virtual LocationError
-    setServerSync(const char* url, int len);
+    setServerSync(const char* url, int len, LocServerType type);
   virtual LocationError
     setServerSync(unsigned int ip, int port, LocServerType type);
   virtual enum loc_api_adapter_err

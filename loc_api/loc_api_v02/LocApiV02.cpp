@@ -460,6 +460,10 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
              "newMask: 0x%" PRIx64 " mQmiMask: 0x%" PRIx64 " qmiMask: 0x%" PRIx64 "",
              clientHandle, mMask, mask, newMask, mQmiMask, qmiMask);
 
+    if ((mQmiMask ^ qmiMask) & qmiMask & QMI_LOC_EVENT_MASK_WIFI_REQ_V02) {
+        wifiStatusInformSync();
+    }
+
     if (newMask != mMask) {
       // it is important to cap the mask here, because not all LocApi's
       // can enable the same bits, e.g. foreground and background.
@@ -1334,7 +1338,7 @@ LocApiV02::registerMasterClient()
 
 /* Set UMTs SLP server URL */
 LocationError
-LocApiV02::setServerSync(const char* url, int len)
+LocApiV02::setServerSync(const char* url, int len, LocServerType type)
 {
   LocationError err = LOCATION_ERROR_SUCCESS;
   locClientReqUnionType req_union;
@@ -1344,8 +1348,7 @@ LocApiV02::setServerSync(const char* url, int len)
 
   if(len < 0 || (size_t)len > sizeof(set_server_req.urlAddr))
   {
-    LOC_LOGE("%s:%d]: len = %d greater than max allowed url length\n",
-                  __func__, __LINE__, len);
+    LOC_LOGe("len = %d greater than max allowed url length", len);
 
     return LOCATION_ERROR_INVALID_PARAMETER;
   }
@@ -1353,9 +1356,13 @@ LocApiV02::setServerSync(const char* url, int len)
   memset(&set_server_req, 0, sizeof(set_server_req));
   memset(&set_server_ind, 0, sizeof(set_server_ind));
 
-  LOC_LOGD("%s:%d]:, url = %s, len = %d\n", __func__, __LINE__, url, len);
+  LOC_LOGd("url = %s, len = %d type=%d", url, len, type);
 
-  set_server_req.serverType = eQMI_LOC_SERVER_TYPE_UMTS_SLP_V02;
+  if (LOC_AGPS_MO_SUPL_SERVER == type) {
+      set_server_req.serverType = eQMI_LOC_SERVER_TYPE_CUSTOM_SLP_V02;
+  } else {
+      set_server_req.serverType = eQMI_LOC_SERVER_TYPE_UMTS_SLP_V02;
+  }
 
   set_server_req.urlAddr_valid = 1;
 
@@ -1371,8 +1378,7 @@ LocApiV02::setServerSync(const char* url, int len)
   if (status != eLOC_CLIENT_SUCCESS ||
          eQMI_LOC_SUCCESS_V02 != set_server_ind.status)
   {
-    LOC_LOGE ("%s:%d]: error status = %s, set_server_ind.status = %s\n",
-              __func__,__LINE__,
+    LOC_LOGe ("error status = %s, set_server_ind.status = %s",
               loc_get_v02_client_status_name(status),
               loc_get_v02_qmi_status_name(set_server_ind.status));
     err = LOCATION_ERROR_GENERAL_FAILURE;
@@ -2680,22 +2686,34 @@ void LocApiV02 :: reportPosition (
 
             if (location_report_ptr->velEnu_valid)
             {
-               locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_NORTH_VEL;
-               locationExtended.northVelocity = location_report_ptr->velEnu[0];
                locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_EAST_VEL;
-               locationExtended.eastVelocity = location_report_ptr->velEnu[1];
+               locationExtended.eastVelocity = location_report_ptr->velEnu[0];
+               locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_NORTH_VEL;
+               locationExtended.northVelocity = location_report_ptr->velEnu[1];
                locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_UP_VEL;
                locationExtended.upVelocity = location_report_ptr->velEnu[2];
             }
 
             if (location_report_ptr->velUncEnu_valid)
             {
-               locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_NORTH_VEL_UNC;
-               locationExtended.northVelocityStdDeviation = location_report_ptr->velUncEnu[0];
                locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_EAST_VEL_UNC;
-               locationExtended.eastVelocityStdDeviation = location_report_ptr->velUncEnu[1];
+               locationExtended.eastVelocityStdDeviation = location_report_ptr->velUncEnu[0];
+               locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_NORTH_VEL_UNC;
+               locationExtended.northVelocityStdDeviation = location_report_ptr->velUncEnu[1];
                locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_UP_VEL_UNC;
                locationExtended.upVelocityStdDeviation = location_report_ptr->velUncEnu[2];
+            }
+
+            if (location_report_ptr->timeUnc_valid)
+            {
+               locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_TIME_UNC;
+               locationExtended.timeUncMs = location_report_ptr->timeUnc;
+            }
+
+            if (location_report_ptr->leapSeconds_valid)
+            {
+               locationExtended.flags |= GPS_LOCATION_EXTENDED_HAS_LEAP_SECONDS;
+               locationExtended.leapSeconds = location_report_ptr->leapSeconds;
             }
 
             LocApiBase::reportPosition(location,
@@ -3968,6 +3986,16 @@ void LocApiV02::requestOdcpi(const qmiLocEventWifiReqIndMsgT_v02& qmiReq)
     LocApiBase::requestOdcpi(req);
 }
 
+void LocApiV02::wifiStatusInformSync()
+{
+    qmiLocNotifyWifiStatusReqMsgT_v02 wifiStatusReq;
+    memset(&wifiStatusReq, 0, sizeof(wifiStatusReq));
+    wifiStatusReq.wifiStatus = eQMI_LOC_WIFI_STATUS_AVAILABLE_V02;
+
+    LOC_LOGv("Informing wifi status available.");
+    LOC_SEND_SYNC_REQ(NotifyWifiStatus, NOTIFY_WIFI_STATUS, wifiStatusReq);
+}
+
 #define FIRST_BDS_D2_SV_PRN 1
 #define LAST_BDS_D2_SV_PRN  5
 #define IS_BDS_GEO_SV(svId, gnssType) ( ((gnssType == GNSS_SV_TYPE_BEIDOU) && \
@@ -4271,6 +4299,7 @@ int LocApiV02 :: convertGnssClock (GnssMeasurementsClock& clock,
         clock.hwClockDiscontinuityCount = localDiscCount;
         clock.timeUncertaintyNs = 0.0;
 
+        msInWeek = (int)gnss_measurement_info.systemTime.systemMsec;
         if (gnss_measurement_info.systemTime_valid) {
             uint16_t systemWeek = gnss_measurement_info.systemTime.systemWeek;
             uint32_t systemMsec = gnss_measurement_info.systemTime.systemMsec;
@@ -4278,7 +4307,6 @@ int LocApiV02 :: convertGnssClock (GnssMeasurementsClock& clock,
             float sysClkUncMs = gnss_measurement_info.systemTime.systemClkTimeUncMs;
             bool isTimeValid = (sysClkUncMs <= 16.0f); // 16ms
 
-            msInWeek = (int)systemMsec;
             if (systemWeek != C_GPS_WEEK_UNKNOWN && isTimeValid) {
                 // fullBiasNs, biasNs & biasUncertaintyNs
                 int64_t totalMs = ((int64_t)systemWeek) *
