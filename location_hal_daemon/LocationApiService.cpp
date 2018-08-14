@@ -107,9 +107,11 @@ LocationApiService::LocationApiService(uint32_t autostart, uint32_t sessiontbfms
         LocHalDaemonClientHandler* pClient = new LocHalDaemonClientHandler(this, "default");
         mClients.emplace("default", pClient);
 
+        pClient->updateSubscription(
+                E_LOC_CB_GNSS_LOCATION_INFO_BIT | E_LOC_CB_GNSS_SV_BIT);
+
         pClient->startTracking(0, sessiontbfms);
         pClient->mTracking = true;
-        pClient->updateSubscription(0);
         pClient->mPendingMessages.push(E_LOCAPI_START_TRACKING_MSG_ID);
     }
 
@@ -149,6 +151,7 @@ void LocationApiService::onListenerReady() {
 
     struct dirent *dp = nullptr;
     struct stat sbuf = {0};
+    const std::string fnamebase = SOCKET_TO_LOCATION_CLIENT_BASE;
     while (nullptr != (dp = readdir(dirp))) {
         std::string fname = SOCKET_DIR_TO_CLIENT;
         fname += dp->d_name;
@@ -156,6 +159,9 @@ void LocationApiService::onListenerReady() {
             continue;
         }
         if ('.' == (dp->d_name[0])) {
+            continue;
+        }
+        if (0 != fname.compare(0, fnamebase.size(), fnamebase)) {
             continue;
         }
         if (S_ISSOCK((mode_t)sbuf.st_mode)) {
