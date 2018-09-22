@@ -3438,8 +3438,6 @@ void  LocApiV02 :: reportSvMeasurement (
 
     // clock frequency
     if (1 == gnss_raw_measurement_ptr->rcvrClockFrequencyInfo_valid) {
-        const qmiLocRcvrClockFrequencyInfoStructT_v02* rcvClockFreqInfo =
-                &gnss_raw_measurement_ptr->rcvrClockFrequencyInfo;
 
         svMeasSetHead.clockFreq.size         = sizeof(Gnss_LocRcvrClockFrequencyInfoStructType);
         svMeasSetHead.clockFreq.clockDrift   =
@@ -3457,9 +3455,6 @@ void  LocApiV02 :: reportSvMeasurement (
 
     if ((1 == gnss_raw_measurement_ptr->leapSecondInfo_valid) &&
         (0 == gnss_raw_measurement_ptr->leapSecondInfo.leapSecUnc)) {
-
-        qmiLocLeapSecondInfoStructT_v02* leapSecond =
-            (qmiLocLeapSecondInfoStructT_v02*)&gnss_raw_measurement_ptr->leapSecondInfo;
 
         svMeasSetHead.leapSec.size       = sizeof(Gnss_LeapSecondInfoStructType);
         svMeasSetHead.leapSec.leapSec    = gnss_raw_measurement_ptr->leapSecondInfo.leapSec;
@@ -4719,9 +4714,6 @@ void LocApiV02 :: reportNiRequest(
     // ES SUPL
     if(ni_req_ptr->suplEmergencyNotification_valid ==1)
     {
-        const qmiLocEmergencyNotificationStructT_v02 *supl_emergency_request =
-        &ni_req_ptr->suplEmergencyNotification;
-
         notif.type = GNSS_NI_TYPE_EMERGENCY_SUPL;
     }
 
