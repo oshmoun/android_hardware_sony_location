@@ -778,6 +778,19 @@ typedef union
 
     const qmiLocGetBsObsDataReqMsgT_v02 *pGetBsObsDataReq;
     /*QMI_LOC_GET_BS_OBS_DATA_REQ_V02*/
+
+    const qmiLocSetConstrainedTuncModeReqMsgT_v02
+            *pSetConstrainedTuncModeReq;
+    /*QMI_LOC_SET_CONSTRAINED_TUNC_MODE_REQ_V02*/
+
+    const qmiLocEnablePositionAssistedClockEstReqMsgT_v02
+            *pSetEnablePositionAssistedClockEstReq;
+    /*QMI_LOC_ENABLE_POSITION_ASSISTED_CLOCK_EST_REQ_V02*/
+
+    const qmiLocQueryGNSSEnergyConsumedReqMsgT_v02
+            *pQueryGNSSEnergyConsumedReq;
+    /*QMI_LOC_QUERY_GNSS_ENERGY_CONSUMED_REQ_V02*/
+
 }locClientReqUnionType;
 
 
@@ -1061,6 +1074,35 @@ typedef union
    const qmiLocEventBsObsDataServiceReqIndMsgT_v02 *pBsObsDataServiceReqEvent;
   /**< Sent by the engine to notify the client about BS CS data available
     QMI_LOC_EVENT_BS_OBS_DATA_SERVICE_REQ_IND_V02. */
+
+   const qmiLocGpsEphemerisReportIndMsgT_v02 *pGpsEphemerisReportEvent;
+  /**< Sent by the engine when GPS ephemeris are available
+    The eventIndId field in the event indication callback is set to
+    QMI_LOC_EVENT_GPS_EPHEMERIS_REPORT_IND_V02 @newpagetable */
+
+   const qmiLocGloEphemerisReportIndMsgT_v02 *pGloEphemerisReportEvent;
+  /**< Sent by the engine when GLONASS ephemeris are available
+    The eventIndId field in the event indication callback is set to
+    QMI_LOC_EVENT_GLONASS_EPHEMERIS_REPORT_IND_V02 @newpagetable */
+
+   const qmiLocBdsEphemerisReportIndMsgT_v02 *pBdsEphemerisReportEvent;
+  /**< Sent by the engine when BDS ephemeris are available
+    The eventIndId field in the event indication callback is set to
+    QMI_LOC_EVENT_BDS_EPHEMERIS_REPORT_IND_V02 @newpagetable */
+
+   const qmiLocGalEphemerisReportIndMsgT_v02 *pGalEphemerisReportEvent;
+    /**< Sent by the engine when GALILEO ephemeris are available
+    The eventIndId field in the event indication callback is set to
+    QMI_LOC_EVENT_GALILEO_EPHEMERIS_REPORT_IND_V02 @newpagetable */
+
+    const qmiLocQzssEphemerisReportIndMsgT_v02 *pQzssEphemerisReportEvent;
+    /**< Sent by the engine when GALILEO ephemeris are available
+    The eventIndId field in the event indication callback is set to
+    QMI_LOC_EVENT_QZSS_EPHEMERIS_REPORT_IND_V02 @newpagetable */
+
+    const qmiLocEventReportIndMsgT_v02 *pLocEvent;
+    /** Sent by engine for modem events to the control point
+    QMI_LOC_EVENT_REPORT_IND_V02 */
 
 }locClientEventIndUnionType;
 
@@ -1546,6 +1588,8 @@ typedef union
     const qmiLocGetBsObsDataIndMsgT_v02 *pGetBsObsDataInd;
     /* QMI_LOC_GET_BS_OBS_DATA_IND_V02 */
 
+    const qmiLocQueryGNSSEnergyConsumedIndMsgT_v02 *pQueryGNSSEnergyConsumedInd;
+    /* QMI_LOC_QUERY_GNSS_ENERGY_CONSUMED_IND_V02*/
 }locClientRespIndUnionType;
 
 /** @} */ /* end_addtogroup data_types */
