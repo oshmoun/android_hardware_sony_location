@@ -1331,7 +1331,7 @@ LocApiV02::registerMasterClient()
 
   if (eLOC_CLIENT_SUCCESS != status ||
       eQMI_LOC_REGISTER_MASTER_CLIENT_SUCCESS_V02 != reg_master_client_ind.status) {
-    LOC_LOGe ("error status = %s, reg_master_client_ind.status = %s",
+    LOC_LOGw ("error status = %s, reg_master_client_ind.status = %s",
               loc_get_v02_client_status_name(status),
               loc_get_v02_qmi_reg_mk_status_name(reg_master_client_ind.status));
     err = LOCATION_ERROR_GENERAL_FAILURE;
@@ -2339,7 +2339,7 @@ void LocApiV02 :: reportPosition (
     memset(&location, 0, sizeof (UlpLocation));
     location.size = sizeof(location);
     location.unpropagatedPosition = unpropagatedPosition;
-    GnssDataNotification dataNotify;
+    GnssDataNotification dataNotify = {};
     int msInWeek = -1;
 
     GpsLocationExtended locationExtended;
@@ -2671,7 +2671,7 @@ void LocApiV02 :: reportPosition (
                             locationExtended.measUsageInfo[idx].gnssSignalType =
                                 (multiBandTypesAvailable ?
                                     location_report_ptr->gnssSvUsedSignalTypeList[idx] :
-                                    GNSS_SIGNAL_BEIDOU_B1);
+                                    GNSS_SIGNAL_BEIDOU_B1I);
                         }
                         else if ((gnssSvIdUsed >= GAL_SV_PRN_MIN) && (gnssSvIdUsed <= GAL_SV_PRN_MAX))
                         {
