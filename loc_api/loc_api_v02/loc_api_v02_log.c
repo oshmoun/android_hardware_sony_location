@@ -433,7 +433,10 @@ static const loc_name_val_s_type loc_v02_event_name[] =
     NAME_VAL(QMI_LOC_EVENT_GLONASS_EPHEMERIS_REPORT_IND_V02),
     NAME_VAL(QMI_LOC_EVENT_BDS_EPHEMERIS_REPORT_IND_V02),
     NAME_VAL(QMI_LOC_EVENT_GALILEO_EPHEMERIS_REPORT_IND_V02),
-    NAME_VAL(QMI_LOC_EVENT_QZSS_EPHEMERIS_REPORT_IND_V02)
+    NAME_VAL(QMI_LOC_EVENT_QZSS_EPHEMERIS_REPORT_IND_V02),
+    NAME_VAL(QMI_LOC_SYSTEM_INFO_REQ_V02),
+    NAME_VAL(QMI_LOC_SYSTEM_INFO_RESP_V02),
+    NAME_VAL(QMI_LOC_SYSTEM_INFO_IND_V02)
 };
 static const int loc_v02_event_num = sizeof(loc_v02_event_name) / sizeof(loc_name_val_s_type);
 
@@ -458,6 +461,7 @@ static const loc_name_val_s_type loc_v02_client_status_name[] =
     NAME_VAL(eLOC_CLIENT_FAILURE_INTERNAL),
     NAME_VAL(eLOC_CLIENT_FAILURE_NOT_INITIALIZED),
     NAME_VAL(eLOC_CLIENT_FAILURE_NOT_ENOUGH_MEMORY),
+    NAME_VAL(eLOC_CLIENT_FAILURE_INVALID_MESSAGE_ID),
 };
 static const int loc_v02_client_status_num = sizeof(loc_v02_client_status_name) / sizeof(loc_name_val_s_type);
 

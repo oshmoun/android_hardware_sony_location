@@ -79,6 +79,7 @@ private:
   bool mMeasurementsStarted;
   std::vector<Resender> mResenders;
   bool mIsMasterRegistered;
+  bool mMasterRegisterNotSupported;
 
   /* Convert event mask from loc eng to loc_api_v02 format */
   static locClientEventMaskType convertMask(LOC_API_ADAPTER_EVENT_MASK_T mask);
@@ -164,6 +165,9 @@ private:
   void populateCommonEphemeris(const qmiLocEphGnssDataStructT_v02 &, GnssEphCommon &);
 
   void reportLocEvent(const qmiLocEventReportIndMsgT_v02 *event_report_ptr);
+  /* convert system info to location api format and dispatch to
+     the registered adapter */
+  void reportSystemInfo(const qmiLocSystemInfoIndMsgT_v02* system_info_ptr);
 
   /* convert engine state report to loc eng format and send the converted
      report to loc eng */
@@ -200,9 +204,9 @@ private:
   void requestOdcpi(
     const qmiLocEventWifiReqIndMsgT_v02& odcpiReq);
 
-  bool registerEventMask(locClientEventMaskType qmiMask);
+  void registerEventMask(LOC_API_ADAPTER_EVENT_MASK_T adapterMask);
   bool sendRequestForAidingData(locClientEventMaskType qmiMask);
-  locClientEventMaskType adjustMaskForNoSession(locClientEventMaskType qmiMask);
+  locClientEventMaskType adjustMaskIfNoSession(locClientEventMaskType qmiMask);
   bool cacheGnssMeasurementSupport();
   void registerMasterClient();
   int getGpsLock(uint8_t subType);
@@ -334,6 +338,12 @@ public:
   virtual void installAGpsCert(const LocDerEncodedCertificate* pData,
                                size_t length,
                                uint32_t slotBitMask);
+
+  inline virtual void setInSession(bool inSession) override {
+      mInSession = inSession;
+      registerEventMask(mMask);
+  }
+
   virtual LocPosTechMask convertPosTechMask(qmiLocPosTechMaskT_v02 mask);
   virtual LocNavSolutionMask convertNavSolutionMask(qmiLocNavSolutionMaskT_v02 mask);
   virtual GnssConfigSuplVersion convertSuplVersion(const uint32_t suplVersion);

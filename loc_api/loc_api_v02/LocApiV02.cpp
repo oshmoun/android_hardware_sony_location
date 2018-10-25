@@ -250,7 +250,7 @@ LocApiV02 :: LocApiV02(LOC_API_ADAPTER_EVENT_MASK_T exMask,
     clientHandle(LOC_CLIENT_INVALID_HANDLE_VALUE),
     mQmiMask(0), mInSession(false), mPowerMode(GNSS_POWER_MODE_INVALID),
     mEngineOn(false), mMeasurementsStarted(false),
-    mIsMasterRegistered(false)
+    mIsMasterRegistered(false), mMasterRegisterNotSupported(false)
 {
   // initialize loc_sync_req interface
   loc_sync_req_init();
@@ -476,15 +476,7 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
       locClientEventMaskType maskDiff = qmiMask ^ mQmiMask;
       // it is important to cap the mask here, because not all LocApi's
       // can enable the same bits, e.g. foreground and background.
-      if (!registerEventMask(qmiMask)) {
-        // we do not update mMask here, because it did not change
-        // as the mask update has failed.
-        rtv = LOC_API_ADAPTER_ERR_FAILURE;
-      }
-      else {
-        mMask = newMask;
-        mQmiMask = qmiMask;
-      }
+      registerEventMask(newMask);
       if (isMaster()) {
         /* Set the SV Measurement Constellation when Measurement Report or Polynomial report is set */
         /* Check if either measurement report or sv polynomial report bit is different in the new
@@ -507,14 +499,16 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
   return rtv;
 }
 
-bool LocApiV02 :: registerEventMask(locClientEventMaskType qmiMask)
+void LocApiV02 :: registerEventMask(LOC_API_ADAPTER_EVENT_MASK_T adapterMask)
 {
-    // if NOT in session and NOT the Background Loc Client, adjust the mask
-    if (!mInSession && (LocDualContext::mBgExclMask & mMask)) {
-        qmiMask = adjustMaskForNoSession(qmiMask);
+    locClientEventMaskType qmiMask = adjustMaskIfNoSession(convertMask(adapterMask));
+    if ((qmiMask != mQmiMask) &&
+            (locClientRegisterEventMask(clientHandle, qmiMask, isMaster()))) {
+        mQmiMask = qmiMask;
     }
-    LOC_LOGd("mQmiMask=0x%" PRIx64 " qmiMask=0x%" PRIx64 "", mQmiMask, qmiMask);
-    return locClientRegisterEventMask(clientHandle, qmiMask, isMaster());
+    LOC_LOGd("registerEventMask:  mMask: %" PRIu64 " mQmiMask=%" PRIu64 " qmiMask=%" PRIu64,
+                adapterMask, mQmiMask, qmiMask);
+    mMask = adapterMask;
 }
 
 bool LocApiV02::sendRequestForAidingData(locClientEventMaskType qmiMask) {
@@ -562,20 +556,22 @@ bool LocApiV02::sendRequestForAidingData(locClientEventMaskType qmiMask) {
 
 }
 
-locClientEventMaskType LocApiV02 :: adjustMaskForNoSession(locClientEventMaskType qmiMask)
+locClientEventMaskType LocApiV02 :: adjustMaskIfNoSession(locClientEventMaskType qmiMask)
 {
-    LOC_LOGd("before qmiMask=0x%" PRIx64 "",qmiMask);
-    locClientEventMaskType clearMask = QMI_LOC_EVENT_MASK_POSITION_REPORT_V02 |
-                                       QMI_LOC_EVENT_MASK_UNPROPAGATED_POSITION_REPORT_V02 |
-                                       QMI_LOC_EVENT_MASK_GNSS_SV_INFO_V02 |
-                                       QMI_LOC_EVENT_MASK_NMEA_V02 |
-                                       QMI_LOC_EVENT_MASK_ENGINE_STATE_V02 |
-                                       QMI_LOC_EVENT_MASK_GNSS_MEASUREMENT_REPORT_V02 |
-                                       QMI_LOC_EVENT_MASK_GNSS_SV_POLYNOMIAL_REPORT_V02 |
-                                       QMI_LOC_EVENT_MASK_EPHEMERIS_REPORT_V02;
-
-    qmiMask = qmiMask & ~clearMask;
-    LOC_LOGd("after qmiMask=0x%" PRIx64 "", qmiMask);
+    locClientEventMaskType oldQmiMask = qmiMask;
+    if (!mInSession) {
+        locClientEventMaskType clearMask = QMI_LOC_EVENT_MASK_POSITION_REPORT_V02 |
+                                           QMI_LOC_EVENT_MASK_UNPROPAGATED_POSITION_REPORT_V02 |
+                                           QMI_LOC_EVENT_MASK_GNSS_SV_INFO_V02 |
+                                           QMI_LOC_EVENT_MASK_NMEA_V02 |
+                                           QMI_LOC_EVENT_MASK_ENGINE_STATE_V02 |
+                                           QMI_LOC_EVENT_MASK_GNSS_MEASUREMENT_REPORT_V02 |
+                                           QMI_LOC_EVENT_MASK_GNSS_SV_POLYNOMIAL_REPORT_V02 |
+                                           QMI_LOC_EVENT_MASK_EPHEMERIS_REPORT_V02;
+        qmiMask = qmiMask & ~clearMask;
+    }
+    LOC_LOGd("oldQmiMask=%" PRIu64 " qmiMask=%" PRIu64 " mInSession: %d",
+            oldQmiMask, qmiMask, mInSession);
     return qmiMask;
 }
 
@@ -589,7 +585,8 @@ enum loc_api_adapter_err LocApiV02 :: close()
       LOC_API_ADAPTER_ERR_SUCCESS : LOC_API_ADAPTER_ERR_FAILURE;
 
   mMask = 0;
-  mNmeaMask = 0;
+  mQmiMask = 0;
+  mInSession = false;
   clientHandle = LOC_CLIENT_INVALID_HANDLE_VALUE;
   mIsMasterRegistered = false;
 
@@ -619,7 +616,7 @@ void LocApiV02 :: startFix(const LocPosMode& fixCriteria, LocApiResponse *adapte
 
   mInSession = true;
   mMeasurementsStarted = true;
-  registerEventMask(mQmiMask);
+  registerEventMask(mMask);
 
   // fill in the start request
   switch(fixCriteria.mode)
@@ -797,7 +794,7 @@ void LocApiV02 :: stopFix(LocApiResponse *adapterResponse)
   // if engine on never happend, deregister events
   // without waiting for Engine Off
   if (!mEngineOn) {
-      registerEventMask(mQmiMask);
+      registerEventMask(mMask);
   }
 
   if( eLOC_CLIENT_SUCCESS != status)
@@ -1589,6 +1586,13 @@ LocApiV02::registerMasterClient()
     LOC_LOGw ("error status = %s, reg_master_client_ind.status = %s",
               loc_get_v02_client_status_name(status),
               loc_get_v02_qmi_reg_mk_status_name(reg_master_client_ind.status));
+    if (eLOC_CLIENT_FAILURE_INVALID_MESSAGE_ID == status ||
+        eLOC_CLIENT_FAILURE_UNSUPPORTED == status) {
+      mMasterRegisterNotSupported = true;
+    } else {
+      mMasterRegisterNotSupported = false;
+    }
+    LOC_LOGv("mMasterRegisterNotSupported = %d", mMasterRegisterNotSupported);
     err = LOCATION_ERROR_GENERAL_FAILURE;
   }
 }
@@ -2508,6 +2512,10 @@ locClientEventMaskType LocApiV02 :: convertMask(
 
   if (mask & LOC_API_ADAPTER_BIT_BS_OBS_DATA_SERVICE_REQ)
       eventMask |= QMI_LOC_EVENT_MASK_BS_OBS_DATA_SERVICE_REQ_V02;
+
+  if (mask & LOC_API_ADAPTER_BIT_LOC_SYSTEM_INFO) {
+      eventMask |= QMI_LOC_EVENT_MASK_NEXT_LS_INFO_REPORT_V02;
+  }
 
   return eventMask;
 }
@@ -4072,6 +4080,75 @@ void LocApiV02::populateQzssEphemeris(const qmiLocQzssEphemerisReportIndMsgT_v02
     }
 }
 
+/* convert system info to GnssDataNotification format and dispatch
+   to the registered adapter */
+void  LocApiV02 :: reportSystemInfo(
+    const qmiLocSystemInfoIndMsgT_v02* system_info_ptr){
+
+    if (system_info_ptr == nullptr) {
+        return;
+    }
+
+    LOC_LOGe("system info type: %d, leap second valid: %d "
+             "current gps time:valid:%d, week: %d, msec: %d,"
+             "current leap second:valid %d, seconds %d, "
+             "next gps time: valid %d, week: %d, msec: %d,"
+             "next leap second: valid %d, seconds %d",
+             system_info_ptr->systemInfo,
+             system_info_ptr->nextLeapSecondInfo_valid,
+             system_info_ptr->nextLeapSecondInfo.gpsTimeCurrent_valid,
+             system_info_ptr->nextLeapSecondInfo.gpsTimeCurrent.gpsWeek,
+             system_info_ptr->nextLeapSecondInfo.gpsTimeCurrent.gpsTimeOfWeekMs,
+             system_info_ptr->nextLeapSecondInfo.leapSecondsCurrent_valid,
+             system_info_ptr->nextLeapSecondInfo.leapSecondsCurrent,
+             system_info_ptr->nextLeapSecondInfo.gpsTimeNextLsEvent_valid,
+             system_info_ptr->nextLeapSecondInfo.gpsTimeNextLsEvent.gpsWeek,
+             system_info_ptr->nextLeapSecondInfo.gpsTimeNextLsEvent.gpsTimeOfWeekMs,
+             system_info_ptr->nextLeapSecondInfo.leapSecondsNext_valid,
+             system_info_ptr->nextLeapSecondInfo.leapSecondsNext);
+
+    LocationSystemInfo systemInfo = {};
+    if ((system_info_ptr->systemInfo == eQMI_LOC_NEXT_LEAP_SECOND_INFO_V02) &&
+        (system_info_ptr->nextLeapSecondInfo_valid == 1)) {
+
+        const qmiLocNextLeapSecondInfoStructT_v02 &nextLeapSecondInfo =
+            system_info_ptr->nextLeapSecondInfo;
+
+        if (nextLeapSecondInfo.gpsTimeNextLsEvent_valid &&
+                nextLeapSecondInfo.leapSecondsCurrent_valid &&
+                nextLeapSecondInfo.leapSecondsNext_valid) {
+
+            systemInfo.systemInfoMask |= LOCATION_SYS_INFO_LEAP_SECOND;
+            systemInfo.leapSecondSysInfo.leapSecondInfoMask |=
+                    LEAP_SECOND_SYS_INFO_LEAP_SECOND_CHANGE_BIT;
+
+            LeapSecondChangeInfo &leapSecondChangeInfo =
+                    systemInfo.leapSecondSysInfo.leapSecondChangeInfo;
+            leapSecondChangeInfo.gpsTimestampLsChange.systemWeek =
+                    nextLeapSecondInfo.gpsTimeNextLsEvent.gpsWeek;
+            leapSecondChangeInfo.gpsTimestampLsChange.systemMsec =
+                    nextLeapSecondInfo.gpsTimeNextLsEvent.gpsTimeOfWeekMs;
+            leapSecondChangeInfo.gpsTimestampLsChange.validityMask =
+                    (GNSS_SYSTEM_TIME_WEEK_VALID | GNSS_SYSTEM_TIME_WEEK_MS_VALID);
+
+            leapSecondChangeInfo.leapSecondsBeforeChange =
+                    nextLeapSecondInfo.leapSecondsCurrent;
+            leapSecondChangeInfo.leapSecondsAfterChange =
+                    nextLeapSecondInfo.leapSecondsNext;
+        } else if (nextLeapSecondInfo.leapSecondsCurrent_valid) {
+            systemInfo.systemInfoMask |= LOCATION_SYS_INFO_LEAP_SECOND;
+            systemInfo.leapSecondSysInfo.leapSecondInfoMask |=
+                    LEAP_SECOND_SYS_INFO_CURRENT_LEAP_SECONDS_BIT;
+            systemInfo.leapSecondSysInfo.leapSecondCurrent =
+                    nextLeapSecondInfo.leapSecondsCurrent;
+        }
+    }
+
+    if (systemInfo.systemInfoMask) {
+        LocApiBase::reportLocationSystemInfo(systemInfo);
+    }
+}
+
 /* convert engine state report to loc eng format and send the converted
    report to loc eng */
 void LocApiV02 :: reportEngineState (
@@ -4090,7 +4167,7 @@ void LocApiV02 :: reportEngineState (
           // If EngineOn is true and InSession is false and Engine is just turned off,
           // then unregister the gps tracking specific event masks
           if (mpLocApiV02->mEngineOn && !mpLocApiV02->mInSession && !mEngineOn) {
-              mpLocApiV02->registerEventMask(mpLocApiV02->mQmiMask);
+              mpLocApiV02->registerEventMask(mpLocApiV02->mMask);
           }
           mpLocApiV02->mEngineOn = mEngineOn;
 
@@ -4104,7 +4181,7 @@ void LocApiV02 :: reportEngineState (
           } else {
               mpLocApiV02->reportStatus(LOC_GPS_STATUS_SESSION_END);
               mpLocApiV02->reportStatus(LOC_GPS_STATUS_ENGINE_OFF);
-              mpLocApiV02->registerEventMask(mpLocApiV02->mQmiMask);
+              mpLocApiV02->registerEventMask(mpLocApiV02->mMask);
               for (auto resender : mpLocApiV02->mResenders) {
                   LOC_LOGV("%s:%d]: resend failed command.", __func__, __LINE__);
                   resender();
@@ -5128,6 +5205,11 @@ void LocApiV02 :: eventCb(locClientHandleType /*clientHandle*/,
     case QMI_LOC_EVENT_REPORT_IND_V02:
         reportLocEvent(eventPayload.pLocEvent);
         break;
+
+    // System info event regarding next leap second
+    case QMI_LOC_SYSTEM_INFO_IND_V02:
+      reportSystemInfo(eventPayload.pLocSystemInfoEvent);
+      break;
   }
 }
 
@@ -5452,7 +5534,8 @@ int LocApiV02::setSvMeasurementConstellation(const locClientEventMaskType mask)
     memset(&setGNSSConstRepConfigReq, 0, sizeof(setGNSSConstRepConfigReq));
 
     setGNSSConstRepConfigReq.measReportConfig_valid = true;
-    if (mask & QMI_LOC_EVENT_MASK_GNSS_MEASUREMENT_REPORT_V02) {
+    if ((mask & QMI_LOC_EVENT_MASK_GNSS_MEASUREMENT_REPORT_V02) ||
+        mMasterRegisterNotSupported) {
         setGNSSConstRepConfigReq.measReportConfig = svConstellation;
     }
 

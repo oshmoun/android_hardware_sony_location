@@ -115,7 +115,10 @@ typedef enum
   eLOC_CLIENT_FAILURE_NOT_INITIALIZED              = 12,
   /**< Failed because the service has not been initialized. */
 
-  eLOC_CLIENT_FAILURE_NOT_ENOUGH_MEMORY             = 13
+  eLOC_CLIENT_FAILURE_NOT_ENOUGH_MEMORY             = 13,
+  /**< Failed because there is not enough memory to do the operation. */
+
+  eLOC_CLIENT_FAILURE_INVALID_MESSAGE_ID            = 14
   /**< Failed because there is not enough memory to do the operation. */
 
 }locClientStatusEnumType;
@@ -1103,6 +1106,10 @@ typedef union
     const qmiLocEventReportIndMsgT_v02 *pLocEvent;
     /** Sent by engine for modem events to the control point
     QMI_LOC_EVENT_REPORT_IND_V02 */
+
+   const qmiLocSystemInfoIndMsgT_v02 *pLocSystemInfoEvent;
+   /** Sent by the engine to inform of location system info event
+    QMI_LOC_SYSTEM_INFO_IND_V02 */
 
 }locClientEventIndUnionType;
 
