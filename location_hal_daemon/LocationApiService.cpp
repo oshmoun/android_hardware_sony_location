@@ -341,6 +341,158 @@ void LocationApiService::getGnssEnergyConsumed(const char* clientSocketName) {
 }
 
 /******************************************************************************
+LocationApiService - implementation - batching
+******************************************************************************/
+void LocationApiService::startBatching(LocAPIStartBatchingReqMsg *pMsg) {
+
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    if (!pClient) {
+        LOC_LOGe(">-- start invalid client=%s", pMsg->mSocketName);
+        return;
+    }
+
+    if (!pClient->startBatching(pMsg->intervalInMs, pMsg->distanceInMeters,
+                pMsg->batchingMode)) {
+        LOC_LOGe("Failed to start session");
+        return;
+    }
+    // success
+    pClient->mBatching = true;
+    pClient->mBatchingMode = pMsg->batchingMode;
+    pClient->mPendingMessages.push(E_LOCAPI_START_BATCHING_MSG_ID);
+
+    LOC_LOGi(">-- start batching session");
+    return;
+}
+
+void LocationApiService::stopBatching(LocAPIStopBatchingReqMsg *pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    if (!pClient) {
+        LOC_LOGe(">-- stop invalid client=%s", pMsg->mSocketName);
+        return;
+    }
+
+    pClient->mBatching = false;
+    pClient->mBatchingMode = BATCHING_MODE_NO_AUTO_REPORT;
+    pClient->updateSubscription(0);
+    pClient->stopBatching();
+    pClient->mPendingMessages.push(E_LOCAPI_STOP_BATCHING_MSG_ID);
+    LOC_LOGi(">-- stopping batching session");
+}
+
+void LocationApiService::updateBatchingOptions(LocAPIUpdateBatchingOptionsReqMsg *pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    if (pClient) {
+        pClient->updateBatchingOptions(pMsg->intervalInMs, pMsg->distanceInMeters,
+                pMsg->batchingMode);
+        pClient->mPendingMessages.push(E_LOCAPI_UPDATE_BATCHING_OPTIONS_MSG_ID);
+    }
+
+    LOC_LOGi(">-- update batching options");
+}
+
+/******************************************************************************
+LocationApiService - implementation - geofence
+******************************************************************************/
+void LocationApiService::addGeofences(LocAPIAddGeofencesReqMsg* pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    if (!pClient) {
+        LOC_LOGe(">-- start invlalid client=%s", pMsg->mSocketName);
+        return;
+    }
+    GeofenceOption* gfOptions =
+            (GeofenceOption*)malloc(pMsg->geofences.count * sizeof(GeofenceOption));
+    GeofenceInfo* gfInfos = (GeofenceInfo*)malloc(pMsg->geofences.count * sizeof(GeofenceInfo));
+    uint32_t* clientIds = (uint32_t*)malloc(pMsg->geofences.count * sizeof(uint32_t));
+
+    for(int i=0; i < pMsg->geofences.count; ++i) {
+        gfOptions[i] = (*(pMsg->geofences.gfPayload + i)).gfOption;
+        gfInfos[i] = (*(pMsg->geofences.gfPayload + i)).gfInfo;
+        clientIds[i] = (*(pMsg->geofences.gfPayload + i)).gfClientId;
+    }
+
+    uint32_t* sessions = pClient->addGeofences(pMsg->geofences.count, gfOptions, gfInfos);
+    if (!sessions) {
+        LOC_LOGe("Failed to add geofences");
+        free(clientIds);
+        free(gfInfos);
+        free(gfOptions);
+        return;
+    }
+    pClient->setGeofenceIds(pMsg->geofences.count, clientIds, sessions);
+    // success
+    pClient->mGfPendingMessages.push(E_LOCAPI_ADD_GEOFENCES_MSG_ID);
+
+    LOC_LOGi(">-- add geofences");
+    free(clientIds);
+    free(gfInfos);
+    free(gfOptions);
+}
+
+void LocationApiService::removeGeofences(LocAPIRemoveGeofencesReqMsg* pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    uint32_t* sessions = pClient->getSessionIds(pMsg->gfClientIds.count, pMsg->gfClientIds.gfIds);
+    if (pClient && sessions) {
+        pClient->removeGeofences(pMsg->gfClientIds.count, sessions);
+        pClient->mGfPendingMessages.push(E_LOCAPI_REMOVE_GEOFENCES_MSG_ID);
+    }
+
+    LOC_LOGi(">-- remove geofences");
+    free(sessions);
+}
+void LocationApiService::modifyGeofences(LocAPIModifyGeofencesReqMsg* pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    GeofenceOption* gfOptions = (GeofenceOption*)
+            malloc(sizeof(GeofenceOption) * pMsg->geofences.count);
+    uint32_t* clientIds = (uint32_t*)malloc(sizeof(uint32_t) * pMsg->geofences.count);
+    for (int i=0; i<pMsg->geofences.count; ++i) {
+        gfOptions[i] = (*(pMsg->geofences.gfPayload + i)).gfOption;
+        clientIds[i] = (*(pMsg->geofences.gfPayload + i)).gfClientId;
+    }
+    uint32_t* sessions = pClient->getSessionIds(pMsg->geofences.count, clientIds);
+
+    if (pClient && sessions) {
+        pClient->modifyGeofences(pMsg->geofences.count, sessions, gfOptions);
+        pClient->mGfPendingMessages.push(E_LOCAPI_MODIFY_GEOFENCES_MSG_ID);
+    }
+
+    LOC_LOGi(">-- modify geofences");
+    free(sessions);
+    free(clientIds);
+    free(gfOptions);
+}
+void LocationApiService::pauseGeofences(LocAPIPauseGeofencesReqMsg* pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    uint32_t* sessions = pClient->getSessionIds(pMsg->gfClientIds.count, pMsg->gfClientIds.gfIds);
+    if (pClient && sessions) {
+        pClient->pauseGeofences(pMsg->gfClientIds.count, sessions);
+        pClient->mGfPendingMessages.push(E_LOCAPI_PAUSE_GEOFENCES_MSG_ID);
+    }
+
+    LOC_LOGi(">-- pause geofences");
+    free(sessions);
+}
+void LocationApiService::resumeGeofences(LocAPIResumeGeofencesReqMsg* pMsg) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    LocHalDaemonClientHandler* pClient = getClient(pMsg->mSocketName);
+    uint32_t* sessions = pClient->getSessionIds(pMsg->gfClientIds.count, pMsg->gfClientIds.gfIds);
+    if (pClient && sessions) {
+        pClient->resumeGeofences(pMsg->gfClientIds.count, sessions);
+        pClient->mGfPendingMessages.push(E_LOCAPI_RESUME_GEOFENCES_MSG_ID);
+    }
+
+    LOC_LOGi(">-- resume geofences");
+    free(sessions);
+}
+
+/******************************************************************************
 LocationApiService - Location Control API callback functions
 ******************************************************************************/
 void LocationApiService::onControlResponseCallback(LocationError err, uint32_t id) {

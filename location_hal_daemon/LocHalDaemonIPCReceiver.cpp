@@ -33,7 +33,6 @@
 LocHalDaemonIPCReceiver - LocIpc overrids
 ******************************************************************************/
 void LocHalDaemonIPCReceiver::onReceive(const std::string& data) {
-
     // parse received message
     LocAPIMsgHeader* pMsg = (LocAPIMsgHeader*)(data.data());
     LOC_LOGd(">-- onReceive len=%u remote=%s msgId=%u",
@@ -101,6 +100,60 @@ void LocHalDaemonIPCReceiver::onReceive(const std::string& data) {
             break;
         }
 
+        case E_LOCAPI_START_BATCHING_MSG_ID: {
+            // start
+            if (sizeof(LocAPIStartBatchingReqMsg) != data.length()) {
+                LOC_LOGe("invalid message");
+                break;
+            }
+            mService->startBatching(reinterpret_cast
+                    <LocAPIStartBatchingReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_STOP_BATCHING_MSG_ID: {
+            // stop
+            if (sizeof(LocAPIStopBatchingReqMsg) != data.length()) {
+                LOC_LOGe("invalid message");
+                break;
+            }
+            mService->stopBatching(reinterpret_cast
+                    <LocAPIStopBatchingReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_UPDATE_BATCHING_OPTIONS_MSG_ID: {
+            if (sizeof(LocAPIUpdateBatchingOptionsReqMsg) != data.length()) {
+                LOC_LOGe("invalid message");
+                break;
+            }
+            mService->updateBatchingOptions(reinterpret_cast
+                    <LocAPIUpdateBatchingOptionsReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_ADD_GEOFENCES_MSG_ID: {
+            mService->addGeofences(reinterpret_cast
+                    <LocAPIAddGeofencesReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_REMOVE_GEOFENCES_MSG_ID: {
+            mService->removeGeofences(reinterpret_cast
+                    <LocAPIRemoveGeofencesReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_MODIFY_GEOFENCES_MSG_ID: {
+            mService->modifyGeofences(reinterpret_cast
+                    <LocAPIModifyGeofencesReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_PAUSE_GEOFENCES_MSG_ID: {
+            mService->pauseGeofences(reinterpret_cast
+                    <LocAPIPauseGeofencesReqMsg*>(pMsg));
+            break;
+        }
+        case E_LOCAPI_RESUME_GEOFENCES_MSG_ID: {
+            mService->resumeGeofences(reinterpret_cast
+                    <LocAPIResumeGeofencesReqMsg*>(pMsg));
+            break;
+        }
         case E_LOCAPI_CONTROL_UPDATE_CONFIG_MSG_ID: {
             if (sizeof(LocAPIUpdateConfigReqMsg) != data.length()) {
                 LOC_LOGe("invalid message");

@@ -32,6 +32,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <memory>
 
 namespace location_client
 {
@@ -288,6 +289,19 @@ enum GnssGloTimeStructTypeFlags {
     GNSS_GLO_REF_FCOUNT_VALID               = (1 << 4),
     GNSS_GLO_NUM_CLOCK_RESETS_VALID         = (1 << 5),
     GNSS_GLO_FOUR_YEAR_VALID                = (1 << 6)
+};
+
+enum BatchingStatus {
+    BATCHING_STATUS_INACTIVE    = 0,
+    BATCHING_STATUS_ACTIVE      = 1,
+    BATCHING_STATUS_DONE        = 2
+};
+
+enum GeofenceBreachTypeMask {
+    GEOFENCE_BREACH_ENTER_BIT     = (1<<0),
+    GEOFENCE_BREACH_EXIT_BIT      = (1<<1),
+    GEOFENCE_BREACH_DWELL_IN_BIT  = (1<<2),
+    GEOFENCE_BREACH_DWELL_OUT_BIT = (1<<3),
 };
 
 struct GnssLocationSvUsedInPosition {
@@ -625,6 +639,43 @@ struct LocationSystemInfo {
     LeapSecondSystemInfo   leapSecondSysInfo;
 };
 
+class GeofenceImpl;
+class LocationClientApi;
+class Geofence {
+    friend class GeofenceImpl;
+    friend class LocationClientApi;
+    std::shared_ptr<GeofenceImpl> mGeofenceImpl;
+    double mLatitude;
+    double mLongitude;
+    double mRadius;
+    GeofenceBreachTypeMask mBreachType;
+    uint32_t mResponsiveness;
+    uint32_t mDwellTime;
+public:
+    virtual ~Geofence() {}
+    inline Geofence(double lat, double lon, double r, GeofenceBreachTypeMask type,
+            uint32_t responsiveness, uint32_t time) :
+            mGeofenceImpl(nullptr), mLatitude(lat), mLongitude(lon), mRadius(r),
+            mBreachType(type), mResponsiveness(responsiveness), mDwellTime(time) {}
+    inline Geofence(const Geofence& geofence): mGeofenceImpl(geofence.mGeofenceImpl),
+            mLatitude(geofence.mLatitude), mLongitude(geofence.mLongitude),
+            mRadius(geofence.mRadius), mBreachType(geofence.mBreachType),
+            mResponsiveness(geofence.mResponsiveness), mDwellTime(geofence.mDwellTime) {}
+    // clients who extends Geofence class should implement this clone method, so that its own
+    // data stashed in the object gets copied to the new object, if desired so.
+    virtual Geofence* clone() { return new Geofence(*this); }
+    bool operator==(Geofence& other);
+    inline double getLatitude() const { return mLatitude; }
+    inline double getLongitude() const { return mLongitude; }
+    inline double getRadius() const { return mRadius; }
+    inline GeofenceBreachTypeMask getBreachType() const { return mBreachType; }
+    inline uint32_t getResponsiveness() const { return mResponsiveness; }
+    inline uint32_t getDwellTime() const { return mDwellTime; }
+    inline void setBreachType(GeofenceBreachTypeMask type) { mBreachType = type; }
+    inline void setResponsiveness(uint32_t responsiveness) { mResponsiveness = responsiveness; }
+    inline void setDwellTime(uint32_t time) { mDwellTime = time; }
+};
+
 /** @fn
     @brief Provides the capabilities of the system,
 
@@ -637,15 +688,25 @@ typedef std::function<void(
 /** @fn
     @brief Used by positioning, batching, and miscellanous APIs
 
-    @param err: if not SUCCESS, then id is not valid
+    @param response: if not LOCATION_RESPONSE_SUCCESS, then the last API called failed
 */
 typedef std::function<void(
     LocationResponse response
 )> ResponseCb;
 
 /** @fn
+    @brief Used by geofence APIs
+
+    @param responses: include Geofence objects and correponding responses.
+*/
+typedef std::function<void(
+    std::vector<std::pair<Geofence, LocationResponse>>& responses
+)> CollectiveResponseCb;
+
+/** @fn
     @brief
     LocationCb is for receiving a location in a positioning session
+    @param location: received location
 */
 typedef std::function<void(
     const Location& location
@@ -654,6 +715,7 @@ typedef std::function<void(
 /** @fn
     @brief
     GnssLocationCb is for receiving a GNSS location in a positioning session
+    @param gnssLocation: received GNSS Location when positioning
 */
 typedef std::function<void(
     const GnssLocation& gnssLocation
@@ -662,6 +724,7 @@ typedef std::function<void(
 /** @fn
     @brief
     GnssNmeaCb is for receiving GNSS SV information
+    @param gnssSvs: received GNSS SV info
 */
 typedef std::function<void(
     const std::vector<GnssSv>& gnssSvs
@@ -670,6 +733,7 @@ typedef std::function<void(
 /** @fn
     @brief
     GnssNmeaCb is for receiving NMEA sentences
+    @param locations: the locations batched in a session
 */
 typedef std::function<void(
     uint64_t timestamp, const std::string& nmea
@@ -678,6 +742,7 @@ typedef std::function<void(
 /** @fn
     @brief
     GnssDataCb is for receiving GnssData information
+    @param gnssData: the GnssData info in a session
 */
 typedef std::function<void(
     const GnssData& gnssData
@@ -693,6 +758,35 @@ typedef std::function<void(
 typedef std::function<void(
     const LocationSystemInfo & locationSystemInfo
 )> LocationSystemInfoCb;
+
+/** @fn
+    @brief
+    BatchingCb is for delivering locations in a batching session
+    @param locations: the locations batched in a session
+    @param batchStatus: BatchingStatus of the batching session, which is
+        BATCHING_STATUS_INACTIVE when unable to compute positions for batching;
+        BATCHING_STATUS_DONE when trip distance has been traversed for tripBatching;
+        BATCHING_STATUS_ACTIVE when able to compute positions for batching.
+*/
+typedef std::function<void(
+    const std::vector<Location>& locations,
+    BatchingStatus batchStatus
+)> BatchingCb;
+
+/** @fn
+    @brief
+    GeofenceBreachCb is for receiving geofences that have a state change
+    @param geofences: array of geofence objects that have breached
+    @param location: location associated with breach
+    @param type: type of breach
+    @param timestamp: timestamp of breach
+*/
+typedef std::function<void(
+    const std::vector<Geofence>& geofences,
+    Location location,
+    GeofenceBreachTypeMask type,
+    uint64_t timestamp
+)> GeofenceBreachCb;
 
 struct GnssReportCbs {
     GnssLocationCb gnssLocationCallback;
@@ -723,6 +817,16 @@ struct GnssEnergyConsumedInfo {
 typedef std::function<void(
     const GnssEnergyConsumedInfo& gnssEneryConsumed
 )> GnssEnergyConsumedCb;
+
+struct ClientCallbacks {
+    CapabilitiesCb capabilitycb;
+    ResponseCb responsecb;
+    CollectiveResponseCb collectivecb;
+    LocationCb locationcb;
+    BatchingCb batchingcb;
+    GeofenceBreachCb gfbreachcb;
+    GnssReportCbs gnssreportcbs;
+};
 
 class LocationClientApiImpl;
 
@@ -758,33 +862,36 @@ public:
            parameters / callback will be updated, and the session continues but with
            the new set of parameters / callback.
 
-        @param
-        intervalInMs, time between fixes, or TBF, in milliseconds. The actual interval
-                      of reports recieved will be no larger than milliseconds being
-                      rounded up the next interval granularity supported by the underlying
-                      system.
-                      0 to indicate don't care.
-                      1)  The underlying system may have a minimum interval threshold
-                      (e.g. 100 ms or 1000 ms). Effective intervals will not be smaller
-                      than this lower bound.
-                      2) The effective intervals may have a granularity level higher
-                      than 1 ms, e.g. 100 ms or 1000 ms. So milliseconds being 1559
-                      may be honored at 1600 or 2000 ms, depending on the system.
-                      3) Where there is anotehr application in they system having a
-                      session with shorter interval, this client may benefit and
-                      receive reports at that interval.
-        distanceInMeters, distance between fixes, in meters. 0 to indicate don't care.
-                      1)  The underlying system may have a minimum distance threshold
-                      (e.g. 1 meter). Effective distance will not be smaller
-                      than this lower bound.
-                      2) The effective distance may have a granularity level higher
-                      than 1 m, e.g. 5 m. So distanceInMeters being 59 may be honored
-                      at 60 m, depending on the system.
-                      3) Where there is anotehr application in they system having a
-                      session with shorter distance, this client may benefit and
-                      receive reports at that distance.
-        locationCallback, callback to receive positions
-        responseCallback, callback to receive system responses; optional.
+        @param intervalInMs
+        time between fixes, or TBF, in milliseconds. The actual interval
+        of reports recieved will be no larger than milliseconds being
+        rounded up the next interval granularity supported by the underlying
+        system.
+        0 to indicate don't care.
+        1)  The underlying system may have a minimum interval threshold
+        (e.g. 100 ms or 1000 ms). Effective intervals will not be smaller
+        than this lower bound.
+        2) The effective intervals may have a granularity level higher
+        than 1 ms, e.g. 100 ms or 1000 ms. So milliseconds being 1559
+        may be honored at 1600 or 2000 ms, depending on the system.
+        3) Where there is anotehr application in they system having a
+        session with shorter interval, this client may benefit and
+        receive reports at that interval.
+        @param distanceInMeters
+        distance between fixes, in meters. 0 to indicate don't care.
+        1)  The underlying system may have a minimum distance threshold
+        (e.g. 1 meter). Effective distance will not be smaller
+        than this lower bound.
+        2) The effective distance may have a granularity level higher
+        than 1 m, e.g. 5 m. So distanceInMeters being 59 may be honored
+        at 60 m, depending on the system.
+        3) Where there is anotehr application in they system having a
+        session with shorter distance, this client may benefit and
+        receive reports at that distance.
+        @param locationCallback
+        callback to receive positions
+        @param responseCallback
+        callback to receive system responses; optional.
 
         @return True, if a session is successfully started.
                 False, if no session is started, i.e. when locationCallback is nullptr.
@@ -806,23 +913,25 @@ public:
            parameters / callback will be updated, and the session continues but with
            the new set of parameters / callback.
 
-        @param
-        intervalInMs, time between fixes, or TBF, in milliseconds. The actual interval
-                      of reports recieved will be no larger than milliseconds being
-                      rounded up the next interval granularity supported by the underlying
-                      system.
-                      0 to indicate don't care.
-                      1)  The underlying system may have a minimum interval threshold
-                      (e.g. 100 ms or 1000 ms). Effective intervals will not be smaller
-                      than this lower bound.
-                      2) The effective intervals may have a granularity level higher
-                      than 1 ms, e.g. 100 ms or 1000 ms. So milliseconds being 1559
-                      may be honored at 1600 or 2000 ms, depending on the system.
-                      3) Where there is anotehr application in they system having a
-                      session with shorter interval, this client may benefit and
-                      receive reports at that interval.
-        gnssReportCallbacks, table of callbacks to receive GNSS locations / SV / NMEA
-        responseCallback, callback to receive system responses; optional.
+        @param intervalInMs
+        time between fixes, or TBF, in milliseconds. The actual interval
+        of reports recieved will be no larger than milliseconds being
+        rounded up the next interval granularity supported by the underlying
+        system.
+        0 to indicate don't care.
+        1)  The underlying system may have a minimum interval threshold
+        (e.g. 100 ms or 1000 ms). Effective intervals will not be smaller
+        than this lower bound.
+        2) The effective intervals may have a granularity level higher
+        than 1 ms, e.g. 100 ms or 1000 ms. So milliseconds being 1559
+        may be honored at 1600 or 2000 ms, depending on the system.
+        3) Where there is anotehr application in they system having a
+        session with shorter interval, this client may benefit and
+        receive reports at that interval.
+        @param gnssReportCallbacks
+        table of callbacks to receive GNSS locations / SV / NMEA
+        @param responseCallback
+        callback to receive system responses; optional.
 
         @return True, if a session is successfully started.
                 False, if no session is started, i.e. when gnssReportCallbacks is
@@ -835,6 +944,141 @@ public:
     */
     void stopPositionSession();
 
+    /* ================================== BATCHING ================================== */
+
+    /** @brief starts an outdoor trip mode batching session with specified parameters.
+        Trip mode batching completes on its own when trip distance is covered.
+        The behavior of the call is non contextual. The current state or the history of
+        actions does not influence the end result of this call. For example, calling
+        this function when idle, or calling this function after another startTripBatchingSession()
+        or startRoutineBatchingSession(), or calling this function after stopBatchingSession()
+        achieve the same result, which is one of the below:
+        If batchingCallback is nullptr, this call is no op. Otherwise...
+        If both minInterval and tripDistance are don't care, this call is no op.
+           Otherwise...
+        If called during a session (no matter from which startTripBatchingSession()/
+        startRoutineBatchingSession() API), parameters / callback will be updated,
+        and the session continues but with the new set of parameters / callback.
+        locations are reported on the batchingCallback in batches when batch is full.
+        @param minInterval
+        time between fixes, or TBF, in milliseconds. The actual interval
+        of reports recieved will be no larger than milliseconds being
+        rounded up the next interval granularity supported by the underlying
+        system.
+        0 to indicate don't care.
+        1)  The underlying system may have a minimum interval threshold
+        (e.g. 100 ms or 1000 ms). Effective intervals will not be smaller
+        than this lower bound.
+        2) The effective intervals may have a granularity level higher
+        than 1 ms, e.g. 100 ms or 1000 ms. So milliseconds being 1559
+        may be honored at 1600 or 2000 ms, depending on the system.
+        3) Where there is anotehr application in they system having a
+        session with shorter interval, this client may benefit and
+        receive reports at that interval.
+        @param tripDistance
+        the trip distance from the start of outdoor trip batching; 0 means don't care
+        @param batchingCallback
+        callback to receive batching positions and status
+        @param responseCallback
+        callback to receive system responses; optional.
+        @return True, if a batching session is successfully started.
+                False, if no session is started, i.e. when batchingCallback is nullptr.
+    */
+    bool startTripBatchingSession(uint32_t minInterval, uint32_t tripDistance,
+                                  BatchingCb batchingCallback, ResponseCb responseCallback);
+
+    /** @brief starts a routine mode batching session with specified parameters.
+        The behavior of the call is non contextual. The current state or the history of
+        actions does not influence the end result of this call. For example, calling
+        this function when idle, or calling this function after another startTripBatchingSession()
+        or startRoutineBatchingSession(), or calling this function after stopBatchingSession()
+        achieve the same result, which is one of the below:
+        If batchingCallback is nullptr, this call is no op. Otherwise...
+        If both minInterval and minDistance are don't care, this call is no op.
+           Otherwise...
+        If called during a session (no matter from which startTripBatchingSession()/
+        startRoutineBatchingSession() API), parameters / callback will be updated,
+        and the session continues but with the new set of parameters / callback.
+        locations are reported on the batchingCallback in batches when batch is full.
+        @param minInterval
+        time between fixes, or TBF, in milliseconds. The actual interval
+        of reports recieved will be no larger than milliseconds being
+        rounded up the next interval granularity supported by the underlying
+        system.
+        0 to indicate don't care.
+        1)  The underlying system may have a minimum interval threshold
+        (e.g. 100 ms or 1000 ms). Effective intervals will not be smaller
+        than this lower bound.
+        2) The effective intervals may have a granularity level higher
+        than 1 ms, e.g. 100 ms or 1000 ms. So milliseconds being 1559
+        may be honored at 1600 or 2000 ms, depending on the system.
+        3) Where there is anotehr application in they system having a
+        session with shorter interval, this client may benefit and
+        receive reports at that interval.
+        @param minDistance
+        specifies the minimum distance that should be traversed before a
+        position should be batched.
+        If 0, the positions are batched after the minInterval period expires.
+        If both minInterval and minDistance are specified, the position are batched only after
+        minInterval has expired AND minDistance has been traversed.
+        - Units: Meters
+        @param batchingCallback
+        callback to receive batching positions and status
+        @param responseCallback
+        callback to receive system responses; optional.
+        @return True, if a batching session is successfully started.
+                False, if no session is started, i.e. when batchingCallback is nullptr.
+    */
+    bool startRoutineBatchingSession(uint32_t minInterval, uint32_t minDistance,
+                                     BatchingCb batchingCallback, ResponseCb responseCallback);
+    /** @brief Stops the batching session.
+    */
+    void stopBatchingSession();
+
+    /* ================================== Geofence ================================== */
+    /** @brief Adds any number of geofences. The geofenceBreachCallback will
+        deliver the status of each geofence according to the Geofence parameter for each.
+        @param geofences
+        Geofence objects, Once addGeofences returns, each Geofence object in the vector would
+        be the identifier throughout the remaining communication of that geofence.
+        Such a Geofence object can be copied or cloned, but they would all reference
+        the same geofence.
+        @param gfBreachCb
+        callback to receive geofences state change. addGeofences is no op if gfBreachCb is null
+        @param responseCallback
+        callback to receive geofence ids and system responses; optional.
+    */
+    void addGeofences(std::vector<Geofence>& geofences, GeofenceBreachCb gfBreachCb,
+                      CollectiveResponseCb responseCallback);
+
+    /** @brief Removes any number of geofences.
+        @param geofences
+        Geofence objects, must be originally added to the system. Otherwise it would be no op.
+    */
+    void removeGeofences(std::vector<Geofence>& geofences);
+
+    /** @brief Modifies any number of geofences.
+        @param geofences
+        Geofence objects, must be originally added to the system. Otherwise it would be no op.
+        Modifiable fields include breachTypeMask, responsiveness and dwelltime.
+        A geofence that has been added to the system may have these fields modified.
+        But it is not going to take any effect until modifyGeofences is called with
+        the changed geofence passed in.
+    */
+    void modifyGeofences(std::vector<Geofence>& geofences);
+
+    /** @brief Pauses any number of geofences, which is similar to removeGeofences,
+        only that they can be resumed at any time.
+        @param geofences
+        Geofence objects, must be originally added to the system. Otherwise it would be no op.
+    */
+    void pauseGeofences(std::vector<Geofence>& geofences);
+
+    /** @brief Resumes any number of geofences that are currently paused.
+        @param geofences
+        Geofence objects, must be originally added to the system. Otherwise it would be no op.
+    */
+    void resumeGeofences(std::vector<Geofence>& geofences);
 
     /** @brief Updatee network availability.
         @param
