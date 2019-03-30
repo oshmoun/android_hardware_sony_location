@@ -261,7 +261,7 @@ LocApiV02 :: LocApiV02(LOC_API_ADAPTER_EVENT_MASK_T exMask,
     clientHandle(LOC_CLIENT_INVALID_HANDLE_VALUE),
     mQmiMask(0), mInSession(false), mPowerMode(GNSS_POWER_MODE_INVALID),
     mEngineOn(false), mMeasurementsStarted(false),
-    mIsMasterRegistered(false), mMasterRegisterNotSupported(false),
+    mMasterRegisterNotSupported(false),
     mSvMeasurementSet(nullptr)
 {
   // initialize loc_sync_req interface
@@ -340,12 +340,14 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
 
         bool gnssMeasurementSupported = false;
         if (isMaster()) {
-            checkRegisterMaster();
+            registerMasterClient();
             gnssMeasurementSupported = cacheGnssMeasurementSupport();
             if (gnssMeasurementSupported) {
                 /* Indicate that QMI LOC message for GNSS measurement was sent */
                 mQmiMask |= QMI_LOC_EVENT_MASK_GNSS_MEASUREMENT_REPORT_V02;
             }
+
+            LocDualContext::injectFeatureConfig(mContext);
         }
 
         // check the modem
@@ -466,8 +468,6 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
        mContext->setEngineCapabilities(supportedMsgList,
             (getSupportedFeatureList_ind.feature_len != 0 ? getSupportedFeatureList_ind.feature:
             NULL), gnssMeasurementSupported);
-
-       LocDualContext::injectFeatureConfig(mContext);
     }
   }
 
@@ -477,7 +477,6 @@ LocApiV02 :: open(LOC_API_ADAPTER_EVENT_MASK_T mask)
     LOC_LOGd("clientHandle = %p mMask: 0x%" PRIx64 " Adapter mask: 0x%" PRIx64 " "
              "newMask: 0x%" PRIx64 " mQmiMask: 0x%" PRIx64 " qmiMask: 0x%" PRIx64 "",
              clientHandle, mMask, mask, newMask, mQmiMask, qmiMask);
-    checkRegisterMaster();
 
     if ((mQmiMask ^ qmiMask) & qmiMask & QMI_LOC_EVENT_MASK_WIFI_REQ_V02) {
         wifiStatusInformSync();
@@ -608,7 +607,6 @@ enum loc_api_adapter_err LocApiV02 :: close()
   mQmiMask = 0;
   mInSession = false;
   clientHandle = LOC_CLIENT_INVALID_HANDLE_VALUE;
-  mIsMasterRegistered = false;
 
   return rtv;
 }
@@ -2529,6 +2527,10 @@ locClientEventMaskType LocApiV02 :: convertMask(
   if (mask & LOC_API_ADAPTER_BIT_EVENT_REPORT_INFO)
       eventMask |= QMI_LOC_EVENT_MASK_GNSS_EVENT_REPORT_V02;
 
+  if (mask & LOC_API_ADAPTER_BIT_GNSS_NHZ_MEASUREMENT) {
+      eventMask |= QMI_LOC_EVENT_MASK_GNSS_NHZ_MEASUREMENT_REPORT_V02;
+  }
+
   return eventMask;
 }
 
@@ -3376,10 +3378,11 @@ void  LocApiV02 :: reportSvMeasurement (
         return;
     }
 
-    LOC_LOGi("[SvMeas] nHz (%d, %d), SeqNum: %d, MaxMsgNum: %d, SvSystem: %d SignalType: %" PRIu64 " MeasValid: %d, #of SV: %d\n",
+    LOC_LOGi("[SvMeas] nHz (%d, %d), SeqNum: %d, MaxMsgNum: %d, SvSystem: %d SignalType: %" PRIu64 ", refFCnt: %d, MeasValid: %d, #of SV: %d\n",
              gnss_raw_measurement_ptr->nHzMeasurement_valid, gnss_raw_measurement_ptr->nHzMeasurement,
              gnss_raw_measurement_ptr->seqNum, gnss_raw_measurement_ptr->maxMessageNum,
              gnss_raw_measurement_ptr->system, gnss_raw_measurement_ptr->gnssSignalType,
+             gnss_raw_measurement_ptr->systemTimeExt.refFCount,
              gnss_raw_measurement_ptr->svMeasurement_valid,
              gnss_raw_measurement_ptr->svMeasurement_len);
 
@@ -3390,12 +3393,12 @@ void  LocApiV02 :: reportSvMeasurement (
 
     if (!mSvMeasurementSet) {
         mSvMeasurementSet = (GnssSvMeasurementSet*) malloc(sizeof(GnssSvMeasurementSet));
-        memset(mSvMeasurementSet, 0, sizeof(GnssSvMeasurementSet));
-        mSvMeasurementSet->size = sizeof(GnssSvMeasurementSet);
         if (!mSvMeasurementSet) {
-            LOC_LOGe ("malloc failed");
+            LOC_LOGe ("Malloc failed to allocate heap memory");
             return;
         }
+        memset(mSvMeasurementSet, 0, sizeof(GnssSvMeasurementSet));
+        mSvMeasurementSet->size = sizeof(GnssSvMeasurementSet);
     }
 
     // in case the measurement with seqNum of 1 is dropped, we will use ref count
@@ -3412,7 +3415,6 @@ void  LocApiV02 :: reportSvMeasurement (
                     gnss_raw_measurement_ptr->nHzMeasurement) {
             mSvMeasurementSet->isNhz = true;
         }
-        LOC_LOGV("size %d, isnHz %d", mSvMeasurementSet->size, mSvMeasurementSet->isNhz);
     }
 
     Gnss_LocSvSystemEnumType locSvSystemType =
@@ -3754,7 +3756,9 @@ void  LocApiV02 :: reportSvMeasurement (
             LOC_LOGE("%s:%d Error in clock_gettime() ",__func__, __LINE__);
         }
 
-        LOC_LOGv("report %d sv in sv meas", mSvMeasurementSet->svMeasCount);
+        LOC_LOGd("refFCnt %d, report %d sv in sv meas",
+                 gnss_raw_measurement_ptr->systemTimeExt.refFCount,
+                 mSvMeasurementSet->svMeasCount);
         LocApiBase::reportSvMeasurement(*mSvMeasurementSet);
         memset(mSvMeasurementSet, 0, sizeof(GnssSvMeasurementSet));
     }
@@ -4913,7 +4917,8 @@ void LocApiV02 :: reportGnssMeasurementData(
                  measurementsNotify.count);
     }
     // the GPS clock time reading
-    if (eQMI_LOC_SV_SYSTEM_GPS_V02 == gnss_measurement_report_ptr.system) {
+    if (eQMI_LOC_SV_SYSTEM_GPS_V02 == gnss_measurement_report_ptr.system &&
+        false == bGPSreceived) {
         bGPSreceived = true;
         msInWeek = convertGnssClock(measurementsNotify.clock,
                                     gnss_measurement_report_ptr);
